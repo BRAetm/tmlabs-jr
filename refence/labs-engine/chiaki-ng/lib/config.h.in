@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
+
+#ifndef LABS_CONFIG_H
+#define LABS_CONFIG_H
+
+#cmakedefine01 LABS_LIB_ENABLE_OPUS
+#cmakedefine01 LABS_LIB_ENABLE_PI_DECODER
+#cmakedefine01 LABS_LIB_ENABLE_FFMPEG_DECODER
+
+#endif // LABS_CONFIG_H

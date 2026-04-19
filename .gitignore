@@ -19,8 +19,6 @@ Makefile
 *.o
 *.exp
 
-refence/
-
 aqtinstall.log
 
 .claude/settings.local.json
