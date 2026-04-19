@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"Start-Process -FilePath 'C:\\\\ghidra_work\\\\run_cv2_analysis.bat' -RedirectStandardOutput 'C:\\\\ghidra_work\\\\ghidra_cv2.log' -RedirectStandardError 'C:\\\\ghidra_work\\\\ghidra_cv2_err.log' -Wait -NoNewWindow; Get-Content 'C:\\\\ghidra_work\\\\ghidra_cv2.log' | Select-Object -Last 50\")",
+      "Bash(cp \"C:/Users/TM/Downloads/hackme.101\\(master level\\) by rashee/ZP HIGHER Lite.exe_extracted/cv2/cv2.pyd\" /c/ghidra_work/cv2.pyd)",
+      "Bash(cp \"C:/Users/TM/Downloads/hackme.101\\(master level\\) by rashee/ZP HIGHER Lite.exe_extracted/cv2/opencv_videoio_ffmpeg4130_64.dll\" /c/ghidra_work/opencv_videoio_ffmpeg4130_64.dll)",
+      "Bash(powershell -Command \"Start-Process -FilePath 'C:\\\\ghidra_work\\\\run_cv2_analysis.bat' -RedirectStandardOutput 'C:\\\\ghidra_work\\\\ghidra_cv2.log' -RedirectStandardError 'C:\\\\ghidra_work\\\\ghidra_cv2_err.log' -Wait -NoNewWindow\")",
+      "Bash(taskkill /F /IM \"Labs.RemotePlay.exe\")",
+      "Bash(taskkill /F /PID 21060)",
+      "Bash(powershell -Command \"Stop-Process -Id 21060 -Force -ErrorAction SilentlyContinue; Start-Sleep 1\")",
+      "Bash(start \"\" \"c:/Users/TM/Desktop/labs engine final/labs-engine/LabsSharp/Labs.RemotePlay.Wpf/bin/x64/Debug/net8.0-windows10.0.22621.0/Labs.RemotePlay.exe\")",
+      "Bash(py -c ' *)"
+    ]
+  }
+}

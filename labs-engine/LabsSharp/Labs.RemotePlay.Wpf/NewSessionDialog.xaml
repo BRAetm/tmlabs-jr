@@ -1,0 +1,271 @@
+<Window x:Class="Labs.RemotePlay.NewSessionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="labs engine · new session" Height="560" Width="720"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStyle="None"
+        Background="{DynamicResource Bg}" Foreground="{DynamicResource Text}"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="40" ResizeBorderThickness="0"
+                            CornerRadius="0" GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <!-- Shared template for every source tile — consistent, no ad-hoc variants -->
+        <Style x:Key="SourceTile" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSoft}"/>
+            <Setter Property="Background" Value="{DynamicResource Surface}"/>
+            <Setter Property="Padding" Value="20,18"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="3"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SurfaceHover}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TileTitle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontDisplay}"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+        </Style>
+        <Style x:Key="TileDesc" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontBody}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+        </Style>
+        <Style x:Key="TileReq" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontMono}"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Caption bar -->
+        <Grid Grid.Row="0" Background="{DynamicResource BgSubtle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
+                <Canvas Width="18" Height="18" VerticalAlignment="Center">
+                    <Path Fill="{DynamicResource Accent}"
+                          Data="M 2,2 L 8,2 L 8,12 L 16,12 L 16,16 L 2,16 Z"/>
+                    <Ellipse Canvas.Left="11" Canvas.Top="3" Width="3" Height="3"
+                             Fill="{StaticResource Blue400}"/>
+                </Canvas>
+                <TextBlock Text="labs engine" Margin="10,0,0,0" VerticalAlignment="Center"
+                           FontFamily="{StaticResource FontDisplay}" FontSize="12"
+                           FontWeight="SemiBold" Foreground="{DynamicResource Text}"/>
+                <TextBlock Text="/ new session" Margin="8,0,0,0" VerticalAlignment="Center"
+                           FontFamily="{StaticResource FontMono}" FontSize="10"
+                           Foreground="{StaticResource TextMuted}"/>
+            </StackPanel>
+            <Button Grid.Column="1" Content="✕" Width="40" Height="40"
+                    Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextMuted}"
+                    FontFamily="{StaticResource FontMono}" FontSize="12" Cursor="Hand"
+                    shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                    Click="Cancel_Click"/>
+        </Grid>
+
+        <!-- Header -->
+        <Grid Grid.Row="1" Margin="28,24,28,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="NEW SESSION" Style="{StaticResource Eyebrow}"/>
+                <TextBlock Text="pick a source" FontFamily="{StaticResource FontDisplay}"
+                           FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource Text}"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+            <TextBlock Grid.Column="1" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                       FontFamily="{StaticResource FontMono}" FontSize="10"
+                       Foreground="{StaticResource TextDim}">
+                <Run Text="4"/><Run Text=" sources"/>
+            </TextBlock>
+        </Grid>
+
+        <!-- 2×2 tile grid — all options weighted equally -->
+        <UniformGrid Grid.Row="2" Rows="2" Columns="2" Margin="22,4,22,4">
+
+            <!-- PS Remote Play -->
+            <Button Style="{StaticResource SourceTile}" Click="PsRp_Click" Margin="6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Glyph: concentric rounded rects (signal/stream) -->
+                    <Canvas Grid.Row="0" Width="36" Height="36" HorizontalAlignment="Left">
+                        <Rectangle Canvas.Left="2"  Canvas.Top="2"  Width="32" Height="32"
+                                   RadiusX="6" RadiusY="6"
+                                   Stroke="{DynamicResource Accent}" StrokeThickness="1.5"
+                                   Fill="Transparent"/>
+                        <Rectangle Canvas.Left="9"  Canvas.Top="9"  Width="18" Height="18"
+                                   RadiusX="3" RadiusY="3"
+                                   Stroke="{StaticResource Blue400}" StrokeThickness="1"
+                                   Fill="Transparent"/>
+                        <Ellipse Canvas.Left="16" Canvas.Top="16" Width="4" Height="4"
+                                 Fill="{DynamicResource Accent}"/>
+                    </Canvas>
+
+                    <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="0,22,0,0">
+                        <TextBlock Text="PS Remote Play" Style="{StaticResource TileTitle}"/>
+                        <TextBlock Text="stream your PS5 over LAN or PSN"
+                                   Style="{StaticResource TileDesc}"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" Style="{StaticResource TileReq}" Margin="0,16,0,0"
+                               Text="requires · PSN account · console on network"/>
+                </Grid>
+            </Button>
+
+            <!-- Xbox Remote Play -->
+            <Button Style="{StaticResource SourceTile}" Click="XboxRp_Click" Margin="6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Glyph: diagonal cross (X) -->
+                    <Canvas Grid.Row="0" Width="36" Height="36" HorizontalAlignment="Left">
+                        <Rectangle Canvas.Left="2" Canvas.Top="2" Width="32" Height="32"
+                                   RadiusX="6" RadiusY="6"
+                                   Stroke="{DynamicResource Accent}" StrokeThickness="1.5"
+                                   Fill="Transparent"/>
+                        <Line X1="11" Y1="11" X2="25" Y2="25"
+                              Stroke="{StaticResource Blue400}" StrokeThickness="1.5"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                        <Line X1="25" Y1="11" X2="11" Y2="25"
+                              Stroke="{StaticResource Blue400}" StrokeThickness="1.5"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    </Canvas>
+
+                    <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="0,22,0,0">
+                        <TextBlock Text="Xbox Remote Play" Style="{StaticResource TileTitle}"/>
+                        <TextBlock Text="capture the Xbox desktop app window"
+                                   Style="{StaticResource TileDesc}"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" Style="{StaticResource TileReq}" Margin="0,16,0,0"
+                               Text="requires · Xbox app running · signed in"/>
+                </Grid>
+            </Button>
+
+            <!-- Capture Card -->
+            <Button Style="{StaticResource SourceTile}" Click="CaptureCard_Click" Margin="6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Glyph: camera lens -->
+                    <Canvas Grid.Row="0" Width="36" Height="36" HorizontalAlignment="Left">
+                        <Rectangle Canvas.Left="2" Canvas.Top="2" Width="32" Height="32"
+                                   RadiusX="6" RadiusY="6"
+                                   Stroke="{DynamicResource Accent}" StrokeThickness="1.5"
+                                   Fill="Transparent"/>
+                        <Ellipse Canvas.Left="10" Canvas.Top="10" Width="16" Height="16"
+                                 Stroke="{StaticResource Blue400}" StrokeThickness="1.2"
+                                 Fill="Transparent"/>
+                        <Ellipse Canvas.Left="15" Canvas.Top="15" Width="6" Height="6"
+                                 Fill="{DynamicResource Accent}"/>
+                    </Canvas>
+
+                    <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="0,22,0,0">
+                        <TextBlock Text="Capture Card" Style="{StaticResource TileTitle}"/>
+                        <TextBlock Text="any USB or HDMI capture device via DirectShow"
+                                   Style="{StaticResource TileDesc}"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" Style="{StaticResource TileReq}" Margin="0,16,0,0"
+                               Text="requires · capture hardware"/>
+                </Grid>
+            </Button>
+
+            <!-- Cloud Gaming -->
+            <Button Style="{StaticResource SourceTile}" Click="Cloud_Click" Margin="6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Glyph: cloud outline -->
+                    <Canvas Grid.Row="0" Width="36" Height="36" HorizontalAlignment="Left">
+                        <Rectangle Canvas.Left="2" Canvas.Top="2" Width="32" Height="32"
+                                   RadiusX="6" RadiusY="6"
+                                   Stroke="{DynamicResource Accent}" StrokeThickness="1.5"
+                                   Fill="Transparent"/>
+                        <Path Fill="Transparent"
+                              Stroke="{StaticResource Blue400}" StrokeThickness="1.3"
+                              Data="M 10,22 Q 7,22 7,19 Q 7,16 11,16 Q 12,11 17,11 Q 22,11 23,15 Q 28,15 28,20 Q 28,22 26,22 Z"/>
+                    </Canvas>
+
+                    <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="0,22,0,0">
+                        <TextBlock Text="Cloud Gaming" Style="{StaticResource TileTitle}"/>
+                        <TextBlock Text="xCloud running in an embedded browser"
+                                   Style="{StaticResource TileDesc}"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" Style="{StaticResource TileReq}" Margin="0,16,0,0"
+                               Text="requires · Microsoft account"/>
+                </Grid>
+            </Button>
+        </UniformGrid>
+
+        <!-- Footer -->
+        <Grid Grid.Row="3" Margin="28,14,28,18">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                       FontFamily="{StaticResource FontMono}" FontSize="10"
+                       Foreground="{StaticResource TextDim}"
+                       Text="click a tile to start · esc to cancel"/>
+            <Button Grid.Column="1" Content="cancel" Style="{StaticResource BtnGhost}"
+                    Padding="18,7" Click="Cancel_Click"/>
+        </Grid>
+    </Grid>
+</Window>

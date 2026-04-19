@@ -1,0 +1,78 @@
+<UserControl x:Class="Labs.RemotePlay.Panels.XboxRemotePlayView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+             Background="#0A0F1A">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Nav strip -->
+        <Border Grid.Row="0" Background="#0D1117" BorderBrush="#1E2A3A" BorderThickness="0,0,0,1" Padding="8,5">
+            <DockPanel>
+                <Button Name="BackBtn"    Content="←" DockPanel.Dock="Left"  Style="{StaticResource BtnQuiet}" Padding="8,2" Click="Back_Click"/>
+                <Button Name="RefreshBtn" Content="↺" DockPanel.Dock="Left"  Style="{StaticResource BtnQuiet}" Padding="8,2" Click="Refresh_Click" Margin="2,0,0,0"/>
+                <Button Content="remote play"  DockPanel.Dock="Right" Style="{StaticResource BtnGhost}" Padding="10,2" Click="GoRemotePlay_Click"/>
+                <Button Content="sign in"      DockPanel.Dock="Right" Style="{StaticResource BtnGhost}" Padding="10,2" Click="GoSignIn_Click" Margin="0,0,4,0"/>
+                <Button Content="free slot"    DockPanel.Dock="Right" Style="{StaticResource BtnGhost}" Padding="10,2" Click="FreeSlot_Click" Margin="0,0,4,0"
+                        ToolTip="Release the Xbox session slot so the Xbox PC app can start Remote Play"/>
+                <TextBlock Name="UrlBar" Foreground="#4A6080" FontFamily="{StaticResource FontMono}"
+                           FontSize="10" VerticalAlignment="Center" Margin="8,0"
+                           TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+        </Border>
+
+        <wv2:WebView2 Name="Web" Grid.Row="1"/>
+
+        <!-- Quality picker — shown before WebView2 init, hidden once user picks -->
+        <Grid Name="QualityPanel" Grid.Row="1" Background="#0A0F1A" Panel.ZIndex="10">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="360">
+                <TextBlock Text="xbox cloud gaming" FontFamily="{StaticResource FontDisplay}"
+                           FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Text}"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="choose stream quality for your device"
+                           FontFamily="{StaticResource FontBody}" FontSize="12"
+                           Foreground="{StaticResource TextMuted}" HorizontalAlignment="Center"
+                           Margin="0,6,0,28"/>
+
+                <!-- High quality card -->
+                <Border Background="#0D1A2E" BorderBrush="#1D4ED8" BorderThickness="1"
+                        CornerRadius="6" Padding="20,16" Margin="0,0,0,12" Cursor="Hand"
+                        MouseLeftButtonUp="PickHigh_Click">
+                    <StackPanel>
+                        <DockPanel>
+                            <TextBlock Text="high quality" FontWeight="SemiBold" Foreground="#F1F5F9"
+                                       FontFamily="{StaticResource FontDisplay}" FontSize="14"/>
+                            <TextBlock Text="1080p · 60fps" DockPanel.Dock="Right"
+                                       Foreground="#1D4ED8" FontFamily="{StaticResource FontMono}"
+                                       FontSize="11" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Text="1080p stream, uncapped bitrate, AV1/HEVC hardware decode. Best on gaming PCs."
+                                   Foreground="#64748B" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   FontFamily="{StaticResource FontBody}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Performance card -->
+                <Border Background="#0D1A1A" BorderBrush="#0D6B50" BorderThickness="1"
+                        CornerRadius="6" Padding="20,16" Cursor="Hand"
+                        MouseLeftButtonUp="PickPerf_Click">
+                    <StackPanel>
+                        <DockPanel>
+                            <TextBlock Text="performance" FontWeight="SemiBold" Foreground="#F1F5F9"
+                                       FontFamily="{StaticResource FontDisplay}" FontSize="14"/>
+                            <TextBlock Text="720p · 60fps" DockPanel.Dock="Right"
+                                       Foreground="#0D9B72" FontFamily="{StaticResource FontMono}"
+                                       FontSize="11" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Text="720p stream, 6 Mbps cap, H.264 only, no sharpening. Runs on low-end laptops."
+                                   Foreground="#64748B" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   FontFamily="{StaticResource FontBody}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

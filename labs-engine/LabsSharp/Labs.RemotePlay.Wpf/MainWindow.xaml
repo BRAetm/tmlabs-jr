@@ -1,0 +1,458 @@
+<Window x:Class="Labs.RemotePlay.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:panels="clr-namespace:Labs.RemotePlay.Panels"
+        Title="labs engine" Height="680" Width="1320"
+        MinHeight="560" MinWidth="1100"
+        Background="{DynamicResource Bg}" Foreground="{DynamicResource Text}"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        UseLayoutRounding="True">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="50"
+                            ResizeBorderThickness="6"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <Style x:Key="Section" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontDisplay}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+        </Style>
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontBody}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+        </Style>
+        <Style x:Key="Value" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontMono}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+        </Style>
+
+        <!-- Window chrome caption buttons — match the deep-blue theme -->
+        <Style x:Key="CaptionBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Setter Property="Width" Value="46"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontFamily" Value="{StaticResource FontMono}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SurfaceHover}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="CaptionBtnClose" TargetType="Button" BasedOn="{StaticResource CaptionBtn}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#C42B1C"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="50"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="22"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="270"/>      <!-- scripts rail -->
+            <ColumnDefinition Width="*"/>        <!-- stage        -->
+            <ColumnDefinition Width="240"/>      <!-- devices rail -->
+        </Grid.ColumnDefinitions>
+
+        <!-- ====== top bar ====== -->
+        <Grid Grid.Row="0" Grid.ColumnSpan="3" Background="{DynamicResource BgSubtle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <!-- 1px accent divider at the very bottom — separates chrome from content -->
+            <Rectangle Grid.ColumnSpan="3" Height="1" VerticalAlignment="Bottom"
+                       Fill="{DynamicResource Accent}" Opacity="0.35"/>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0">
+                <!-- Logo mark: L glyph + signal pulse — labs engine identity -->
+                <Canvas Width="30" Height="30" VerticalAlignment="Center">
+                    <Path Fill="{DynamicResource Accent}"
+                          Data="M 4,4 L 13,4 L 13,19 L 26,19 L 26,26 L 4,26 Z"/>
+                    <Ellipse Canvas.Left="18" Canvas.Top="6" Width="5" Height="5"
+                             Fill="{StaticResource Blue400}"/>
+                    <Rectangle Canvas.Left="24" Canvas.Top="22" Width="4" Height="2"
+                               Fill="{StaticResource Blue200}" Opacity="0.8"/>
+                </Canvas>
+                <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="labs engine"
+                               FontFamily="{StaticResource FontDisplay}" FontSize="17"
+                               FontWeight="SemiBold" Foreground="{DynamicResource Text}"
+                               LineHeight="17"/>
+                    <TextBlock Text="v1.0 · creator studio"
+                               FontFamily="{StaticResource FontMono}" FontSize="10"
+                               Foreground="{StaticResource Blue400}" Margin="0,2,0,0"/>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,0"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Button x:Name="MuteBtn" Content="mute" Style="{StaticResource BtnQuiet}" Margin="8,0" Click="Mute_Click"/>
+
+                <!-- Overflow menu — app-level actions -->
+                <Button Content="⋯" Style="{StaticResource BtnQuiet}" Margin="8,0"
+                        Padding="10,6" FontSize="16" Click="MoreMenu_Click">
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="theme…" Click="OpenTheme_Click"/>
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+
+                <Button x:Name="StopSessionBtn" Content="stop session" Style="{StaticResource BtnGhost}"
+                        Margin="12,14,0,0" VerticalAlignment="Center"
+                        Click="StopSession_Click" Visibility="Collapsed"/>
+                <Button Content="+ new session" Style="{StaticResource BtnPrimary}" Margin="10,14,18,0"
+                        VerticalAlignment="Center" Click="NewSession_Click"/>
+
+                <!-- Window chrome buttons — minimize / maximize / close -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button Style="{StaticResource CaptionBtn}"      Content="—"   Click="CaptionMin_Click"  ToolTip="minimize"/>
+                    <Button x:Name="MaxBtn" Style="{StaticResource CaptionBtn}" Content="◻" Click="CaptionMax_Click" ToolTip="maximize"/>
+                    <Button Style="{StaticResource CaptionBtnClose}" Content="✕"   Click="CaptionClose_Click" ToolTip="close"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- ====== LEFT RAIL · scripts ====== -->
+        <Grid Grid.Row="1" Grid.Column="0" Background="{DynamicResource BgSubtle}">
+            <!-- 1px right edge visually separates rail from stage -->
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Rectangle Grid.RowSpan="3" Width="1" HorizontalAlignment="Right" Fill="{StaticResource BorderSoft}" Opacity="0.6"/>
+
+            <!-- scripts header + controls -->
+            <StackPanel Grid.Row="0" Margin="22,22,22,0">
+                <DockPanel LastChildFill="False">
+                    <TextBlock Text="scripts" Style="{StaticResource Section}" VerticalAlignment="Center"/>
+                    <Button DockPanel.Dock="Right" Content="⟳" ToolTip="refresh script list"
+                            Style="{StaticResource BtnQuiet}" Padding="10,6" FontSize="14"
+                            Click="RefreshScripts_Click"/>
+                </DockPanel>
+
+                <TextBlock Text="active script" Style="{StaticResource Label}" Margin="0,14,0,4"/>
+                <ComboBox x:Name="ScriptCombo" SelectionChanged="ScriptCombo_Changed"/>
+
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Content="run"  Style="{StaticResource BtnPrimary}" Margin="0,0,4,0" Padding="20,9" Click="RunScript_Click"/>
+                    <Button Grid.Column="1" Content="stop" Style="{StaticResource BtnGhost}"  Margin="4,0,0,0" Padding="20,9" Click="StopScript_Click"/>
+                </Grid>
+
+                <TextBlock Margin="0,14,0,0" FontFamily="{StaticResource FontBody}" FontSize="12">
+                    <Run Text="status · " Foreground="{StaticResource TextMuted}"/>
+                    <Run Text="idle" FontFamily="{StaticResource FontMono}" Foreground="{StaticResource TextMuted}"/>
+                </TextBlock>
+            </StackPanel>
+
+            <!-- Row 1 left intentionally blank — scripts list removed -->
+
+            <!-- folder footer: path + pick · open -->
+            <StackPanel Grid.Row="2" Margin="22,0,22,22">
+                <Border Height="1" Background="{StaticResource BorderSoft}" Margin="0,0,0,14"/>
+                <TextBlock Text="SCRIPTS FOLDER" Style="{StaticResource Eyebrow}"/>
+
+                <Border Background="{DynamicResource Surface}"
+                        BorderBrush="{StaticResource BorderSoft}" BorderThickness="1"
+                        CornerRadius="2" Padding="10,8" Margin="0,8,0,0">
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="📁" ToolTip="choose a different folder"
+                                Style="{StaticResource BtnQuiet}" Padding="8,4" FontSize="14"
+                                Margin="8,0,0,0" Click="ChangeScriptsFolder_Click"/>
+                        <TextBlock x:Name="ScriptsPathText" Text="…"
+                                   FontFamily="{StaticResource FontMono}" FontSize="11"
+                                   Foreground="{StaticResource Blue400}"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Border>
+
+                <Button Content="open folder" Style="{StaticResource BtnGhost}" Padding="16,7"
+                        HorizontalAlignment="Left" Margin="0,10,0,0" Click="OpenScriptsFolder_Click"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ====== CENTER STAGE ====== -->
+        <Grid Grid.Row="1" Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="54"/>
+            </Grid.RowDefinitions>
+
+            <!-- Tab strip (helios-style) -->
+            <Border Grid.Row="0" Background="{DynamicResource BgSubtle}"
+                    BorderBrush="{StaticResource BorderSoft}" BorderThickness="0,0,0,1">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                        <Button x:Name="TabVideo"   Content="video display"     Style="{StaticResource TabBtnActive}" Click="Tab_Click" Tag="video"/>
+                        <Button x:Name="TabMonitor" Content="controller monitor" Style="{StaticResource TabBtn}"       Click="Tab_Click" Tag="monitor"/>
+                        <Button x:Name="TabMarket"  Content="script market"      Style="{StaticResource TabBtn}"       Click="Tab_Click" Tag="market"/>
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="0,0,14,0">
+                        <Ellipse Width="6" Height="6" Fill="{StaticResource Success}" VerticalAlignment="Center"/>
+                        <TextBlock Text="server online" Margin="8,0,0,0"
+                                   FontFamily="{StaticResource FontMono}" FontSize="10"
+                                   Foreground="{StaticResource Success}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Stage area: three stacked tab-content grids, one visible at a time -->
+            <Grid Grid.Row="1">
+                <!-- VIDEO DISPLAY TAB -->
+                <Grid x:Name="VideoTab">
+                    <Border Name="SessionHost" Visibility="Collapsed"
+                            Background="Black" BorderThickness="0" CornerRadius="0"
+                            ClipToBounds="True"/>
+
+                    <Grid Name="EmptyStage">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440">
+                            <TextBlock Text="no active session"
+                                       FontFamily="{StaticResource FontDisplay}" FontSize="22"
+                                       FontWeight="SemiBold" Foreground="{DynamicResource Text}"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock Text="start one from + new session in the top bar."
+                                       Style="{StaticResource Label}" Margin="0,8,0,0" TextAlignment="Center"
+                                       TextWrapping="Wrap"/>
+                            <Button Content="+ new session" Style="{StaticResource BtnPrimary}"
+                                    Margin="0,22,0,0" HorizontalAlignment="Center" Padding="26,11"
+                                    Click="NewSession_Click"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Stats HUD pinned top-right of the stream -->
+                    <Border x:Name="StatsHud"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,12,16,0" Padding="10,6" CornerRadius="2"
+                            Background="#B0000000"
+                            Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Processing:" FontFamily="{StaticResource FontMono}" FontSize="11"
+                                       Foreground="#80FFFFFF"/>
+                            <TextBlock x:Name="ProcFpsText" Text=" 0 fps" FontFamily="{StaticResource FontMono}" FontSize="11"
+                                       Foreground="White" FontWeight="SemiBold"/>
+                            <TextBlock Text="   Display:" FontFamily="{StaticResource FontMono}" FontSize="11"
+                                       Foreground="#80FFFFFF"/>
+                            <TextBlock x:Name="DispFpsText" Text=" 0 fps" FontFamily="{StaticResource FontMono}" FontSize="11"
+                                       Foreground="White" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Controller monitor overlay on the video (compact) -->
+                    <Border x:Name="ControllerOverlay"
+                            HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                            Margin="16,0,0,16" Padding="10" CornerRadius="3"
+                            Background="#B0000000"
+                            Visibility="Collapsed" Width="360">
+                        <panels:ControllerMonitorView x:Name="Monitor"/>
+                    </Border>
+                </Grid>
+
+                <!-- CONTROLLER MONITOR TAB (full-size) -->
+                <Grid x:Name="MonitorTab" Visibility="Collapsed" Margin="40,20,40,20">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" HorizontalAlignment="Center">
+                        <TextBlock Text="CONTROLLER MONITOR" Style="{StaticResource Eyebrow}"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock Text="live controller input"
+                                   FontFamily="{StaticResource FontDisplay}" FontSize="20"
+                                   FontWeight="SemiBold" Foreground="{DynamicResource Text}"
+                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                    </StackPanel>
+                    <panels:ControllerMonitorFullView Grid.Row="1" x:Name="MonitorBig"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="2" x:Name="MonitorStatus" Text="xinput: waiting for controller"
+                               FontFamily="{StaticResource FontMono}" FontSize="11"
+                               Foreground="{StaticResource TextMuted}"
+                               HorizontalAlignment="Center" Margin="0,14,0,0"/>
+                </Grid>
+
+                <!-- SCRIPT MARKET TAB (placeholder) -->
+                <Grid x:Name="MarketTab" Visibility="Collapsed">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440">
+                        <TextBlock Text="SCRIPT MARKET" Style="{StaticResource Eyebrow}" HorizontalAlignment="Center"/>
+                        <TextBlock Text="coming soon"
+                                   FontFamily="{StaticResource FontDisplay}" FontSize="22"
+                                   FontWeight="SemiBold" Foreground="{DynamicResource Text}"
+                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                        <TextBlock Text="browse + install community cv scripts"
+                                   Style="{StaticResource Label}" Margin="0,10,0,0"
+                                   TextAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+
+            <!-- Compact log strip at the bottom of the stage -->
+            <Border Grid.Row="2" Background="{DynamicResource BgSubtle}"
+                    BorderBrush="{StaticResource BorderSoft}" BorderThickness="0,1,0,0">
+                <DockPanel LastChildFill="True" Margin="14,0,10,0">
+                    <TextBlock DockPanel.Dock="Left" Text="log" VerticalAlignment="Center"
+                               FontFamily="{StaticResource FontMono}" FontSize="10"
+                               Foreground="{StaticResource TextDim}" Margin="0,0,12,0"/>
+                    <Button DockPanel.Dock="Right" Content="clear" Style="{StaticResource BtnQuiet}"
+                            Padding="10,4" VerticalAlignment="Center"
+                            Click="ClearLog_Click"/>
+                    <ScrollViewer x:Name="LogScroller" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <TextBlock Name="LogOutput" Padding="0,8"
+                                   FontFamily="{StaticResource FontMono}" FontSize="11"
+                                   Foreground="{StaticResource TextMuted}" TextWrapping="NoWrap"/>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ====== RIGHT RAIL · devices / capture / titan ====== -->
+        <Grid Grid.Row="1" Grid.Column="2" Background="{DynamicResource BgSubtle}">
+            <Rectangle Width="1" HorizontalAlignment="Left" Fill="{StaticResource BorderSoft}" Opacity="0.6"/>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="22,22,22,22">
+
+                    <!-- titan bridge -->
+                    <DockPanel LastChildFill="False">
+                        <TextBlock Text="titan bridge" Style="{StaticResource Section}"/>
+                        <TextBlock x:Name="TitanStatusText" Text="not connected" Style="{StaticResource Label}" DockPanel.Dock="Right"
+                                   FontFamily="{StaticResource FontMono}"/>
+                    </DockPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button x:Name="TitanConnectBtn" Content="connect titan" Style="{StaticResource BtnQuiet}"
+                                Click="TitanConnect_Click" Margin="0,0,6,0"/>
+                        <Button x:Name="TitanScanBtn" Content="scan" Style="{StaticResource BtnQuiet}" Click="TitanScan_Click"/>
+                    </StackPanel>
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.Resources>
+                            <Style x:Key="Slot" TargetType="Border">
+                                <Setter Property="Background" Value="{DynamicResource Surface}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource BorderSoft}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="CornerRadius" Value="2"/>
+                                <Setter Property="Margin" Value="2"/>
+                                <Setter Property="Padding" Value="8,8"/>
+                                <Setter Property="Height" Value="54"/>
+                            </Style>
+                        </Grid.Resources>
+                        <Border Grid.Column="0" Style="{StaticResource Slot}">
+                            <StackPanel>
+                                <TextBlock Text="slot 1" FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{StaticResource TextMuted}"/>
+                                <TextBlock Text="empty" FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{StaticResource TextDim}" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="1" Style="{StaticResource Slot}">
+                            <StackPanel>
+                                <TextBlock Text="slot 2" FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{StaticResource TextMuted}"/>
+                                <TextBlock Text="empty" FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{StaticResource TextDim}" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="2" Style="{StaticResource Slot}">
+                            <StackPanel>
+                                <TextBlock Text="slot 3" FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{StaticResource TextMuted}"/>
+                                <TextBlock Text="empty" FontFamily="{StaticResource FontMono}" FontSize="11" Foreground="{StaticResource TextDim}" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="console → titan (offline) → controller"
+                               Style="{StaticResource Label}" FontFamily="{StaticResource FontMono}"
+                               Margin="0,10,0,0"/>
+
+                    <Border Height="1" Background="{StaticResource BorderSoft}" Margin="0,20"/>
+
+                    <!-- devices -->
+                    <TextBlock Text="devices" Style="{StaticResource Section}"/>
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource Label}" Text="vigem"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource Value}" Text="connected" TextAlignment="Right" Foreground="{StaticResource Success}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource Label}" Text="titan"/>
+                        <TextBlock x:Name="TitanDeviceStatus" Grid.Row="1" Grid.Column="1" Style="{StaticResource Value}" Text="not found" TextAlignment="Right" Foreground="{StaticResource TextDim}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource Label}" Text="gpc3"/>
+                        <TextBlock x:Name="GpcStatusText" Grid.Row="2" Grid.Column="1" Style="{StaticResource Value}" Text="available" TextAlignment="Right" Foreground="{StaticResource Success}"/>
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ====== status ====== -->
+        <Grid Grid.Row="2" Grid.ColumnSpan="3" Background="{DynamicResource BgSubtle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="20,0"
+                       FontFamily="{StaticResource FontMono}" FontSize="11"
+                       Foreground="{StaticResource TextDim}">
+                <Run Foreground="{StaticResource Success}" Text="ready"/>
+                <Run Text=" · labs engine · v1.0"/>
+            </TextBlock>
+
+            <!-- Live session FPS (collapsed when no active session) -->
+            <StackPanel x:Name="FpsPill" Grid.Column="1" Orientation="Horizontal"
+                        VerticalAlignment="Center" Margin="0,0,20,0" Visibility="Collapsed">
+                <Ellipse Width="6" Height="6" Fill="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="FpsText" Text="0 fps" Margin="8,0,0,0"
+                           FontFamily="{StaticResource FontMono}" FontSize="11"
+                           Foreground="{StaticResource Blue400}" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
