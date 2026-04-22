@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/labs">
+        <file>labs.ico</file>
+        <file>labs.png</file>
+        <file>xbox_controller.svg</file>
+    </qresource>
+</RCC>

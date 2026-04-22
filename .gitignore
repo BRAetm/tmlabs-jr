@@ -22,3 +22,12 @@ Makefile
 aqtinstall.log
 
 .claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# User-local settings
+labs-engine/scripts/userdata/
+labs-engine/userdata/

@@ -1,0 +1,6 @@
+add_subdirectory(display)
+add_subdirectory(wgc_capture)
+add_subdirectory(xinput_input)
+add_subdirectory(vigem_output)
+add_subdirectory(cv_python)
+add_subdirectory(ps_remote_play)

@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(mkdir -p /c/Users/TM/.claude/skills)",
-      "Bash(cp -r /tmp/anthropics-skills/skills/frontend-design /c/Users/TM/.claude/skills/)",
-      "Read(//c/Users/TM/.claude/skills/**)"
-    ]
-  }
-}
