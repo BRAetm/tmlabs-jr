@@ -29,31 +29,41 @@ public:
     void handleRegistEvent(int typeInt, const QByteArray& registKey,
                            const QByteArray& morning, bool isPs5);
 
+    // Public so the C log callback can route raw messages back into the UI.
+    void translateRegistMessage(const QString& raw);
+
 private slots:
     void onSignInClicked();
+    void onSignOutClicked();
     void onPairClicked();
     void onCancelClicked();
+    void onFindConsoleClicked();
 
 private:
-    void setAccountLinked(const QString& accountIdBase64);
+    void setAccountLinked(const QString& accountIdBase64, const QString& username);
+    void clearAccount();
     void updateLinkedLabel();
     void setBusy(bool busy);
     void reportStatus(const QString& msg, bool ok = false, bool err = false);
-
     SettingsManager* m_settings = nullptr;
 
     // Step 1 widgets
     QLabel*      m_linkedLabel = nullptr;
+    QPushButton* m_signInBtn   = nullptr;
+    QPushButton* m_signOutBtn  = nullptr;
 
     // Step 2 widgets
     QLineEdit*   m_hostEdit   = nullptr;
     QCheckBox*   m_ps5Check   = nullptr;
     QLineEdit*   m_pinEdit    = nullptr;
+    QPushButton* m_findBtn    = nullptr;
     QPushButton* m_pairBtn    = nullptr;
     QPushButton* m_cancelBtn  = nullptr;
     QLabel*      m_status     = nullptr;
+    QLabel*      m_progress   = nullptr;
 
     QString m_accountIdBase64;
+    QString m_psnUsername;
 
     struct Impl;
     Impl* m_impl = nullptr;

@@ -11,6 +11,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -64,7 +65,7 @@ struct PairPSDialog::Impl {
         if (impl && impl->owner) {
             const QString m = QString::fromUtf8(msg);
             QMetaObject::invokeMethod(impl->owner, [impl, m]() {
-                impl->owner->reportStatus(m);
+                impl->owner->translateRegistMessage(m);
             }, Qt::QueuedConnection);
         }
     }
@@ -80,27 +81,36 @@ PairPSDialog::PairPSDialog(SettingsManager* settings, QWidget* parent)
     m_impl->owner = this;
     setWindowTitle(QStringLiteral("Pair PlayStation"));
     setModal(true);
-    setMinimumWidth(460);
+    setMinimumWidth(520);
 
     // ── Step 1 — PSN account ──────────────────────────────────────────────────
     auto* step1Label = new QLabel(QStringLiteral("<b>STEP 1 — Link PlayStation Account</b>"), this);
 
-    // Load saved account ID from settings
-    if (m_settings)
+    // Load saved account ID + username from settings
+    if (m_settings) {
         m_accountIdBase64 = m_settings->value(QStringLiteral("ps/psnAccountId")).toString();
+        m_psnUsername    = m_settings->value(QStringLiteral("ps/psnUsername")).toString();
+    }
 
-    // Linked status (text set after widget exists)
     m_linkedLabel = new QLabel(this);
     m_linkedLabel->setWordWrap(true);
+    m_linkedLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-    auto* signInBtn = new QPushButton(QStringLiteral("Sign in with PSN  →"), this);
-    signInBtn->setToolTip(QStringLiteral("Opens an embedded browser — sign in and the app handles the rest"));
+    m_signInBtn  = new QPushButton(QStringLiteral("Sign in with PSN  →"), this);
+    m_signInBtn->setToolTip(QStringLiteral("Opens Sony's sign-in page in your browser"));
+    m_signOutBtn = new QPushButton(QStringLiteral("Sign Out"), this);
+    m_signOutBtn->setToolTip(QStringLiteral("Disconnect this PSN account"));
+
+    auto* signRow = new QHBoxLayout();
+    signRow->setSpacing(8);
+    signRow->addWidget(m_signInBtn, 1);
+    signRow->addWidget(m_signOutBtn);
 
     auto* step1Layout = new QVBoxLayout();
     step1Layout->setSpacing(6);
     step1Layout->addWidget(step1Label);
     step1Layout->addWidget(m_linkedLabel);
-    step1Layout->addWidget(signInBtn);
+    step1Layout->addLayout(signRow);
 
     // ── Divider ───────────────────────────────────────────────────────────────
     auto* divider = new QFrame(this);
@@ -111,9 +121,21 @@ PairPSDialog::PairPSDialog(SettingsManager* settings, QWidget* parent)
     auto* step2Label = new QLabel(QStringLiteral("<b>STEP 2 — Pair Console</b>"), this);
 
     m_hostEdit = new QLineEdit(this);
-    m_hostEdit->setPlaceholderText(QStringLiteral("192.168.1.42"));
-    if (m_settings)
-        m_hostEdit->setText(m_settings->value(QStringLiteral("ps/hostIp")).toString());
+    m_hostEdit->setPlaceholderText(QStringLiteral("Auto-detected from network…"));
+    if (m_settings) {
+        // Prefer the auto-discovered host (ps/host) over any old manually-entered one.
+        QString ip = m_settings->value(QStringLiteral("ps/host")).toString();
+        if (ip.isEmpty()) ip = m_settings->value(QStringLiteral("ps/hostIp")).toString();
+        m_hostEdit->setText(ip);
+    }
+
+    m_findBtn = new QPushButton(QStringLiteral("Find on Network"), this);
+    m_findBtn->setToolTip(QStringLiteral("Broadcast UDP discovery to find your PS5 / PS4"));
+
+    auto* hostRow = new QHBoxLayout();
+    hostRow->setSpacing(8);
+    hostRow->addWidget(m_hostEdit, 1);
+    hostRow->addWidget(m_findBtn);
 
     m_ps5Check = new QCheckBox(QStringLiteral("PS5  (uncheck for PS4)"), this);
     m_ps5Check->setChecked(m_settings ? m_settings->value(QStringLiteral("ps/isPs5"), true).toBool() : true);
@@ -125,13 +147,14 @@ PairPSDialog::PairPSDialog(SettingsManager* settings, QWidget* parent)
         QRegularExpression(QStringLiteral("\\d{1,8}")), this));
 
     auto* consoleHint = new QLabel(
-        QStringLiteral("On the console:  Settings → Remote Play → Link Device  — then enter the PIN shown."), this);
+        QStringLiteral("On the console:  Settings → System → Remote Play → Link Device.\n"
+                       "Get a fresh PIN — they expire in about 30 seconds."), this);
     consoleHint->setWordWrap(true);
     consoleHint->setStyleSheet(QStringLiteral("color: #888; font-size: 11px;"));
 
     auto* form = new QFormLayout();
     form->setSpacing(8);
-    form->addRow(QStringLiteral("Console IP:"), m_hostEdit);
+    form->addRow(QStringLiteral("Console IP:"), hostRow);
     form->addRow(QString(), m_ps5Check);
     form->addRow(QStringLiteral("PIN:"), m_pinEdit);
 
@@ -142,9 +165,14 @@ PairPSDialog::PairPSDialog(SettingsManager* settings, QWidget* parent)
     btnRow->addWidget(m_pairBtn);
     btnRow->addWidget(m_cancelBtn);
 
+    // Big stage indicator + small detail line
+    m_progress = new QLabel(this);
+    m_progress->setWordWrap(true);
+    m_progress->setStyleSheet(QStringLiteral("color: #c0c8d8; font-weight: 600;"));
+
     m_status = new QLabel(this);
     m_status->setWordWrap(true);
-    m_status->setStyleSheet(QStringLiteral("color: #888;"));
+    m_status->setStyleSheet(QStringLiteral("color: #888; font-size: 11px;"));
 
     auto* step2Layout = new QVBoxLayout();
     step2Layout->setSpacing(6);
@@ -159,14 +187,17 @@ PairPSDialog::PairPSDialog(SettingsManager* settings, QWidget* parent)
     root->addLayout(step1Layout);
     root->addWidget(divider);
     root->addLayout(step2Layout);
+    root->addWidget(m_progress);
     root->addWidget(m_status);
     root->addLayout(btnRow);
 
-    updateLinkedLabel();   // now safe — m_linkedLabel is constructed
+    updateLinkedLabel();
 
-    connect(signInBtn,  &QPushButton::clicked, this, &PairPSDialog::onSignInClicked);
-    connect(m_pairBtn,  &QPushButton::clicked, this, &PairPSDialog::onPairClicked);
-    connect(m_cancelBtn, &QPushButton::clicked, this, &PairPSDialog::onCancelClicked);
+    connect(m_signInBtn,  &QPushButton::clicked, this, &PairPSDialog::onSignInClicked);
+    connect(m_signOutBtn, &QPushButton::clicked, this, &PairPSDialog::onSignOutClicked);
+    connect(m_findBtn,    &QPushButton::clicked, this, &PairPSDialog::onFindConsoleClicked);
+    connect(m_pairBtn,    &QPushButton::clicked, this, &PairPSDialog::onPairClicked);
+    connect(m_cancelBtn,  &QPushButton::clicked, this, &PairPSDialog::onCancelClicked);
 }
 
 PairPSDialog::~PairPSDialog()
@@ -190,27 +221,103 @@ void PairPSDialog::onSignInClicked()
     dlg->exec();
 }
 
-void PairPSDialog::setAccountLinked(const QString& accountIdBase64)
+void PairPSDialog::onSignOutClicked()
+{
+    clearAccount();
+    reportStatus(QStringLiteral("Signed out. Sign back in to link a different PSN account."), false);
+}
+
+void PairPSDialog::setAccountLinked(const QString& accountIdBase64, const QString& username)
 {
     m_accountIdBase64 = accountIdBase64;
+    m_psnUsername     = username;
     if (m_settings) {
         m_settings->setValue(QStringLiteral("ps/psnAccountId"), accountIdBase64);
+        m_settings->setValue(QStringLiteral("ps/psnUsername"), username);
         m_settings->sync();
     }
     updateLinkedLabel();
-    reportStatus(QStringLiteral("Account linked. Now enter your console IP and PIN below."), true);
+    const QString display = username.isEmpty() ? QStringLiteral("your PSN account") : username;
+    reportStatus(QStringLiteral("Linked to %1. Enter your console PIN below to pair.").arg(display), true);
+}
+
+void PairPSDialog::clearAccount()
+{
+    m_accountIdBase64.clear();
+    m_psnUsername.clear();
+    if (m_settings) {
+        m_settings->remove(QStringLiteral("ps/psnAccountId"));
+        m_settings->remove(QStringLiteral("ps/psnUsername"));
+        m_settings->sync();
+    }
+    updateLinkedLabel();
 }
 
 void PairPSDialog::updateLinkedLabel()
 {
-    if (m_accountIdBase64.isEmpty()) {
-        m_linkedLabel->setText(QStringLiteral("<span style='color:#888'>Not linked — sign in below.</span>"));
+    const bool linked = !m_accountIdBase64.isEmpty();
+    m_signOutBtn->setVisible(linked);
+    m_signInBtn ->setText(linked
+        ? QStringLiteral("Switch Account  →")
+        : QStringLiteral("Sign in with PSN  →"));
+
+    if (!linked) {
+        m_linkedLabel->setText(
+            QStringLiteral("<span style='color:#888'>Not signed in. Click below to link your PSN account.</span>"));
+    } else if (m_psnUsername.isEmpty()) {
+        // We have an account ID but Sony didn't return online_id this time.
+        m_linkedLabel->setText(
+            QStringLiteral("<span style='color:#3a7'>✓ Signed in</span> "
+                           "<span style='color:#888; font-size:11px'>"
+                           "(re-link to refresh username)</span>"));
     } else {
         m_linkedLabel->setText(
-            QStringLiteral("<span style='color:#3a7'>✓ Account linked</span>  "
-                           "<span style='color:#666; font-size:11px'>") +
-            m_accountIdBase64 + QStringLiteral("</span>"));
+            QStringLiteral("<span style='color:#3a7'>✓ Signed in as</span> "
+                           "<span style='color:#fff; font-weight:600'>") +
+            m_psnUsername.toHtmlEscaped() + QStringLiteral("</span>"));
     }
+}
+
+// ── Auto-fill console IP via UDP discovery ───────────────────────────────────
+void PairPSDialog::onFindConsoleClicked()
+{
+    m_findBtn->setEnabled(false);
+    m_findBtn->setText(QStringLiteral("Searching…"));
+    reportStatus(QStringLiteral("Broadcasting to find your console on this network…"));
+
+    // Settings might already have a freshly discovered host from LabsEngine startup
+    QTimer::singleShot(2800, this, [this]() {
+        QString ip;
+        if (m_settings)
+            ip = m_settings->value(QStringLiteral("ps/host")).toString();
+        m_findBtn->setEnabled(true);
+        m_findBtn->setText(QStringLiteral("Find on Network"));
+        if (ip.isEmpty()) {
+            reportStatus(QStringLiteral(
+                "No console found. Make sure your PS5 is on, on the same network, "
+                "and 'Stay Connected to Internet' is enabled in Power Saving."), false, true);
+        } else {
+            m_hostEdit->setText(ip);
+            reportStatus(QStringLiteral("Found console at %1 — enter the PIN to pair.").arg(ip), true);
+        }
+    });
+}
+
+// ── Translate raw chiaki/labs.dll log lines into consumer-friendly stages ────
+void PairPSDialog::translateRegistMessage(const QString& raw)
+{
+    const QString lower = raw.toLower();
+    QString stage;
+    if      (lower.contains("send")     && lower.contains("auth"))   stage = QStringLiteral("Sending PIN to console…");
+    else if (lower.contains("connect")  && lower.contains("regist")) stage = QStringLiteral("Connecting to console…");
+    else if (lower.contains("respond")  || lower.contains("response"))stage = QStringLiteral("Console replied — verifying…");
+    else if (lower.contains("registr"))                              stage = QStringLiteral("Registering with console…");
+    else if (lower.contains("succe"))                                stage = QStringLiteral("Saving credentials…");
+
+    if (!stage.isEmpty() && m_progress)
+        m_progress->setText(stage);
+    // Always echo the raw log to the small detail line for debugging.
+    if (m_status) m_status->setText(raw);
 }
 
 // ── Step 2: Pairing ───────────────────────────────────────────────────────────
@@ -241,7 +348,8 @@ void PairPSDialog::onPairClicked()
     }
 
     setBusy(true);
-    reportStatus(QStringLiteral("Pairing… keep the PIN screen visible on the console."));
+    if (m_progress) m_progress->setText(QStringLiteral("Pairing — keep the PIN screen visible on the console…"));
+    reportStatus(QString());
 
     labs_log_init(&m_impl->log, LABS_LOG_ALL, &Impl::logCb, m_impl);
     m_impl->hostUtf8 = host.toUtf8();
@@ -302,6 +410,7 @@ void PairPSDialog::handleRegistEvent(int typeInt, const QByteArray& registKey,
         QMetaObject::invokeMethod(this, [this, registKey, morning, isPs5, host]() {
             if (m_settings) {
                 m_settings->setValue(QStringLiteral("ps/hostIp"),    host);
+                m_settings->setValue(QStringLiteral("ps/host"),      host);
                 m_settings->setValue(QStringLiteral("ps/isPs5"),     isPs5);
                 m_settings->setValue(QStringLiteral("ps/registKey"), registKey.toBase64());
                 m_settings->setValue(QStringLiteral("ps/morning"),   morning.toBase64());
@@ -309,7 +418,8 @@ void PairPSDialog::handleRegistEvent(int typeInt, const QByteArray& registKey,
             }
             m_registRunning.store(false);
             setBusy(false);
-            reportStatus(QStringLiteral("Paired successfully. Close this dialog and click Start."), true);
+            if (m_progress) m_progress->setText(QStringLiteral("✓ Paired successfully"));
+            reportStatus(QStringLiteral("You're all set. Close this dialog and click Start."), true);
             m_pairBtn->setText(QStringLiteral("Done"));
             disconnect(m_pairBtn, &QPushButton::clicked, this, &PairPSDialog::onPairClicked);
             connect(m_pairBtn,    &QPushButton::clicked, this, &QDialog::accept);
@@ -319,14 +429,19 @@ void PairPSDialog::handleRegistEvent(int typeInt, const QByteArray& registKey,
         QMetaObject::invokeMethod(this, [this]() {
             m_registRunning.store(false);
             setBusy(false);
-            reportStatus(QStringLiteral("Pairing failed — check IP, account link, and PIN."), false, true);
+            if (m_progress) m_progress->setText(QStringLiteral("✗ Pairing failed"));
+            reportStatus(QStringLiteral(
+                "Couldn't pair. Common causes: PIN expired (they last ~30s — get a fresh one), "
+                "wrong console IP, or this PSN account isn't signed into the console."),
+                false, true);
         }, Qt::QueuedConnection);
 
     } else if (type == LABS_REGIST_EVENT_TYPE_FINISHED_CANCELED) {
         QMetaObject::invokeMethod(this, [this]() {
             m_registRunning.store(false);
             setBusy(false);
-            reportStatus(QStringLiteral("Pairing canceled."), false, true);
+            if (m_progress) m_progress->setText(QStringLiteral("Pairing canceled"));
+            reportStatus(QString(), false);
         }, Qt::QueuedConnection);
     }
 }

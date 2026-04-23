@@ -21,9 +21,10 @@ public:
     ~PsnLoginDialog() override = default;
 
     QString accountIdBase64() const { return m_accountId; }
+    QString psnUsername()    const { return m_psnUsername; }
 
 signals:
-    void accountIdReady(const QString& accountIdBase64);
+    void accountIdReady(const QString& accountIdBase64, const QString& username);
 
 private slots:
     void onOpenBrowser();
@@ -41,6 +42,7 @@ private:
     QLabel*               m_status   = nullptr;
     QNetworkAccessManager* m_nam     = nullptr;
     QString               m_accountId;
+    QString               m_psnUsername;
 };
 
 } // namespace Labs

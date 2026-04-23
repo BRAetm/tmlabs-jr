@@ -181,12 +181,16 @@ void PsnLoginDialog::onInfoReply(QNetworkReply* reply)
         return;
     }
 
+    // Sony's token-info response usually includes online_id (the human-readable
+    // PSN username). Save whatever Sony sent — fall back to empty if absent.
+    m_psnUsername = root.value(QStringLiteral("online_id")).toString();
+
     QByteArray bytes(8, 0);
     for (int i = 0; i < 8; ++i)
         bytes[i] = static_cast<char>((userId >> (8 * i)) & 0xFF);
 
     m_accountId = QString::fromLatin1(bytes.toBase64());
-    emit accountIdReady(m_accountId);
+    emit accountIdReady(m_accountId, m_psnUsername);
     accept();
 }
 
