@@ -41,6 +41,14 @@ try:
 except ImportError:
     BC_OK = False
 
+try:
+    import mss
+    import cv2
+    import numpy as np
+    MSS_OK = True
+except ImportError:
+    MSS_OK = False
+
 
 def main():
     p = argparse.ArgumentParser()
@@ -57,12 +65,17 @@ def main():
     p.add_argument("--no-hands-up",  action="store_true", dest="no_hands_up")
     p.add_argument("--xi-index",     type=int,   default=0, dest="xi_index")
     p.add_argument("--gpu",          type=int,   default=0, help="BetterCam device_idx")
+    p.add_argument("--target-fps",     type=int, default=120, dest="target_fps",
+                   help="BetterCam capture target FPS (default 120; 60 for low-end)")
+    p.add_argument("--passthrough-hz", type=int, default=500, dest="passthrough_hz",
+                   help="XInput passthrough rate Hz (default 500; 250 for low-end)")
+    p.add_argument("--detect-every-n", type=int, default=1, dest="detect_every_n",
+                   help="Process every Nth captured frame (default 1; 2 halves detection CPU)")
+    p.add_argument("--capture",      choices=["bettercam", "mss"], default="bettercam",
+                   help="Capture backend (mss is slower but works without DXGI/GPU)")
     args = p.parse_args()
 
     print(f"[ENGINE] pid={os.getpid()}", flush=True)
-    if not BC_OK:
-        print("[ENGINE] ERROR: bettercam not installed — pip install bettercam", flush=True)
-        sys.exit(1)
 
     # find LabsEngine's Remote Play window
     region = find_window()
@@ -70,9 +83,32 @@ def main():
            region["left"] + region["width"],
            region["top"]  + region["height"])
 
-    cam = bettercam.create(device_idx=args.gpu, output_color="BGR")
-    cam.start(region=reg, target_fps=240, video_mode=True)
-    print(f"[ENGINE] BetterCam region={reg} target_fps=240", flush=True)
+    # capture backend selection: bettercam (GPU) → mss (CPU) fallback
+    cam = None
+    sct = None
+    capture_mode = args.capture
+    if capture_mode == "bettercam":
+        if not BC_OK:
+            print("[ENGINE] BetterCam not installed — falling back to mss", flush=True)
+            capture_mode = "mss"
+        else:
+            try:
+                cam = bettercam.create(device_idx=args.gpu, output_color="BGR")
+                cam.start(region=reg, target_fps=args.target_fps, video_mode=True)
+                print(f"[ENGINE] BetterCam region={reg} target_fps={args.target_fps} gpu={args.gpu}",
+                      flush=True)
+            except Exception as ex:
+                print(f"[ENGINE] BetterCam init failed: {ex} — falling back to mss", flush=True)
+                capture_mode = "mss"
+    if capture_mode == "mss":
+        if not MSS_OK:
+            print("[ENGINE] ERROR: neither bettercam nor mss available — pip install mss",
+                  flush=True)
+            sys.exit(1)
+        sct = mss.mss()
+        mss_region = {"left": reg[0], "top": reg[1],
+                      "width": reg[2]-reg[0], "height": reg[3]-reg[1]}
+        print(f"[ENGINE] mss region={mss_region}  (CPU capture)", flush=True)
 
     detector = ShotMeterDetector(args.threshold, args.threshold_l2)
     bridge   = PSControllerBridge()
@@ -97,7 +133,8 @@ def main():
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, _handle_signal)
 
-    # 500Hz XInput → virtual pads via PSControllerBridge.passthrough
+    # XInput → virtual pads via PSControllerBridge.passthrough at args.passthrough_hz
+    pt_interval = 1.0 / max(1, args.passthrough_hz)
     def passthrough_loop():
         while not _stop.is_set():
             gp = _read_xinput(args.xi_index)
@@ -107,21 +144,33 @@ def main():
                 bridge.defense_enabled = not bridge.defense_enabled
                 bridge._qs_toggle_requested = False
                 print(f"[BRIDGE] defense {'ON' if bridge.defense_enabled else 'OFF'}", flush=True)
-            time.sleep(1.0 / 500)
+            time.sleep(pt_interval)
 
     threading.Thread(target=passthrough_loop, daemon=True).start()
 
     # detection loop
-    print("[ENGINE] Running — Ctrl-C to stop", flush=True)
+    print(f"[ENGINE] Running — capture={capture_mode} passthrough={args.passthrough_hz}Hz "
+          f"detect_every_n={args.detect_every_n}", flush=True)
     fc              = 0
+    frame_n         = 0
     status_tw       = time.perf_counter()
     cal_reported_n  = 0
     cal_reported_l2 = 0
+    every_n         = max(1, args.detect_every_n)
     try:
         while not _stop.is_set():
-            bgr = cam.get_latest_frame()
+            if capture_mode == "bettercam":
+                bgr = cam.get_latest_frame()
+            else:
+                bgra = np.asarray(sct.grab(mss_region))
+                bgr  = cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR)
             if bgr is None:
                 continue
+
+            frame_n += 1
+            if frame_n % every_n != 0:
+                continue
+
             gp = _read_xinput(args.xi_index)
             l2 = bool(gp and gp.bLeftTrigger > 128)
 
@@ -155,10 +204,14 @@ def main():
                 status_tw = now
     finally:
         _stop.set()
-        try: cam.stop()
-        except Exception: pass
-        try: cam.release()
-        except Exception: pass
+        if cam is not None:
+            try: cam.stop()
+            except Exception: pass
+            try: cam.release()
+            except Exception: pass
+        if sct is not None:
+            try: sct.close()
+            except Exception: pass
         print("[ENGINE] Stopped", flush=True)
 
 
