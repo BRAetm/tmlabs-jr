@@ -516,6 +516,191 @@ class ToggleRow(QtWidgets.QWidget):
     def isChecked(self) -> bool:   return self._box.isChecked()
 
 
+# ── Column-layout widgets — control-panel style ───────────────────────────────
+
+class ColumnHeader(QtWidgets.QLabel):
+    """Big centered cyan column header (SHOOTING / DEFENSE / BOOSTS)."""
+    def __init__(self, text: str):
+        super().__init__(text.upper())
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+        f.setPointSize(13); f.setWeight(QtGui.QFont.Weight(800))
+        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 4.5)
+        self.setFont(f)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet(f"color: {ACCENT}; padding: 4px 0 2px 0;")
+
+
+class FieldLabel(QtWidgets.QLabel):
+    """Small caps label that sits above a control."""
+    def __init__(self, text: str):
+        super().__init__(text.upper())
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
+        f.setPointSize(8); f.setWeight(QtGui.QFont.Weight(700))
+        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 2.0)
+        self.setFont(f)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet(f"color: {DIM};")
+
+
+class StepBtn(QtWidgets.QPushButton):
+    """Small step button used flanking a slider (-2 / -.5 / +.5 / +2)."""
+    def __init__(self, text: str):
+        super().__init__(text)
+        self.setFixedSize(34, 26)
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
+        f.setPointSize(9); f.setWeight(QtGui.QFont.Weight(600))
+        self.setFont(f)
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: {SURF2}; color: {DIM};
+                border: 1px solid {BORDER}; border-radius: 5px;
+                padding: 0;
+            }}
+            QPushButton:hover  {{ color: {TEXT}; border-color: {BORD_HI}; }}
+            QPushButton:pressed{{ background: {BG}; }}
+        """)
+
+
+class BigStepSlider(QtWidgets.QWidget):
+    """Centered field label + huge value + step buttons + slider."""
+    valueChanged = QtCore.Signal(float)
+
+    def __init__(self, label: str, lo: float, hi: float,
+                 unit: str = "%", decimals: int = 1, default: float = 0.0,
+                 small_step: float = 0.5, big_step: float = 2.0):
+        super().__init__()
+        self._dec = decimals
+        self._unit = unit
+
+        col = QtWidgets.QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0); col.setSpacing(6)
+
+        col.addWidget(FieldLabel(label))
+
+        # huge centered value
+        self.val = QtWidgets.QLabel(f"{default:.{decimals}f}{unit}")
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+        f.setPointSize(30); f.setWeight(QtGui.QFont.Weight(800))
+        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, -1.0)
+        self.val.setFont(f)
+        self.val.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.val.setStyleSheet(f"color: {ACCENT};")
+        col.addWidget(self.val)
+
+        # step buttons + slider
+        row = QtWidgets.QHBoxLayout(); row.setSpacing(4)
+        bm2  = StepBtn(f"-{big_step:g}");   bms = StepBtn(f"-{small_step:g}")
+        bps  = StepBtn(f"+{small_step:g}"); bp2 = StepBtn(f"+{big_step:g}")
+        self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider.setRange(int(lo * 10**decimals), int(hi * 10**decimals))
+        self.slider.setSingleStep(max(1, int(small_step * 10**decimals)))
+        self.slider.setPageStep(max(1, int(big_step * 10**decimals)))
+        self.slider.setValue(int(round(default * 10**decimals)))
+        self.slider.valueChanged.connect(self._on_change)
+        bm2.clicked.connect(lambda: self._step(-big_step))
+        bms.clicked.connect(lambda: self._step(-small_step))
+        bps.clicked.connect(lambda: self._step(+small_step))
+        bp2.clicked.connect(lambda: self._step(+big_step))
+        row.addWidget(bm2); row.addWidget(bms)
+        row.addWidget(self.slider, 1)
+        row.addWidget(bps); row.addWidget(bp2)
+        col.addLayout(row)
+
+    def _step(self, delta: float):
+        self.setValue(self.value() + delta)
+
+    def _on_change(self, _):
+        v = self.value()
+        self.val.setText(f"{v:.{self._dec}f}{self._unit}")
+        self.valueChanged.emit(v)
+
+    def setValue(self, v: float):
+        self.slider.setValue(int(round(v * 10**self._dec)))
+
+    def value(self) -> float:
+        return self.slider.value() / 10**self._dec
+
+
+class StateToggle(QtWidgets.QWidget):
+    """Checkbox + LABEL + ON/OFF state text. Like ZP's [✓] ENABLED ON."""
+    toggled = QtCore.Signal(bool)
+
+    def __init__(self, label: str):
+        super().__init__()
+        h = QtWidgets.QHBoxLayout(self)
+        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(10)
+
+        self._box = QtWidgets.QCheckBox()
+        self._box.toggled.connect(self._on_toggle)
+        h.addWidget(self._box)
+
+        self._lbl = QtWidgets.QLabel(label.upper())
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
+        f.setPointSize(9); f.setWeight(QtGui.QFont.Weight(700))
+        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 1.4)
+        self._lbl.setFont(f)
+        self._lbl.setStyleSheet(f"color: {TEXT};")
+        h.addWidget(self._lbl)
+
+        h.addStretch(1)
+
+        self._state = QtWidgets.QLabel("OFF")
+        self._state.setFont(f)
+        self._state.setStyleSheet(f"color: {DIM};")
+        h.addWidget(self._state)
+
+    def _on_toggle(self, v: bool):
+        self._state.setText("ON" if v else "OFF")
+        self._state.setStyleSheet(f"color: {ACCENT if v else DIM};")
+        self.toggled.emit(v)
+
+    def setChecked(self, v: bool):
+        self._box.setChecked(bool(v))
+        self._on_toggle(bool(v))
+
+    def isChecked(self) -> bool:
+        return self._box.isChecked()
+
+
+class StatLine(QtWidgets.QWidget):
+    """Right-aligned big number with caps label on the left — bottom-of-column stat."""
+    def __init__(self, label: str, value: str = "—"):
+        super().__init__()
+        h = QtWidgets.QHBoxLayout(self)
+        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(12)
+        self._lbl = QtWidgets.QLabel(label.upper())
+        f1 = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
+        f1.setPointSize(9); f1.setWeight(QtGui.QFont.Weight(700))
+        f1.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 1.6)
+        self._lbl.setFont(f1)
+        self._lbl.setStyleSheet(f"color: {DIM};")
+        h.addWidget(self._lbl)
+        h.addStretch(1)
+        self._val = QtWidgets.QLabel(value)
+        f2 = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+        f2.setPointSize(20); f2.setWeight(QtGui.QFont.Weight(800))
+        self._val.setFont(f2)
+        self._val.setStyleSheet(f"color: {ACCENT};")
+        self._val.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        h.addWidget(self._val)
+
+    def setValue(self, s: str): self._val.setText(s)
+
+
+def _hr(parent=None):
+    f = QtWidgets.QFrame(parent)
+    f.setFixedHeight(1)
+    f.setStyleSheet(f"background: {BORDER};")
+    return f
+
+
+def _vsep(parent=None):
+    f = QtWidgets.QFrame(parent)
+    f.setFixedWidth(1)
+    f.setStyleSheet(f"background: {BORDER};")
+    return f
+
+
 class StatBox(QtWidgets.QWidget):
     """Big jersey-number stat. Dim caps label up top, huge bold number below."""
     def __init__(self, label: str, value: str = "—"):
@@ -580,8 +765,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TM LABS · 2K")
-        self.resize(760, 620)
-        self.setMinimumSize(700, 540)
+        self.resize(1180, 720)
+        self.setMinimumSize(1080, 640)
         self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setStyleSheet(STYLESHEET + f"QMainWindow {{ background: {BG}; }}")
@@ -660,39 +845,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return bar
 
-    # ── body (tabs + pages) ───────────────────────────────────────────────────
+    # ── body (3-column control panel — single screen, no tabs) ───────────────
     def _build_body(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
         w.setStyleSheet(f"background: {BG};")
-        v = QtWidgets.QVBoxLayout(w)
-        v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
+        h = QtWidgets.QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(0)
 
-        # tab row — pill nav, breathing room, no underline
-        tab_bar = QtWidgets.QWidget()
-        tab_bar.setFixedHeight(56)
-        tab_bar.setStyleSheet(f"background: {BG}; border-bottom: 1px solid {BORDER};")
-        th = QtWidgets.QHBoxLayout(tab_bar)
-        th.setContentsMargins(24, 10, 24, 10); th.setSpacing(6)
+        h.addWidget(self._col_shooting(), 1)
+        h.addWidget(_vsep())
+        h.addWidget(self._col_defense(), 1)
+        h.addWidget(_vsep())
+        h.addWidget(self._col_boosts_stats(), 1)
 
-        pages    = ["Shooting", "Defense", "Features", "Live Stats"]
-        builders = [self._pg_shooting, self._pg_defense,
-                    self._pg_features, self._pg_stats]
-
-        self._tabs  = QtWidgets.QButtonGroup(w); self._tabs.setExclusive(True)
-        self._stack = QtWidgets.QStackedWidget()
-        self._stack.setStyleSheet(f"background: {BG};")
-
-        for i, (lbl, build) in enumerate(zip(pages, builders)):
-            t = TabBtn(lbl); self._tabs.addButton(t, i); th.addWidget(t)
-            self._stack.addWidget(build())
-        th.addStretch(1)
-        self._tabs.idClicked.connect(self._stack.setCurrentIndex)
-        self._tabs.button(0).setChecked(True)
-
-        v.addWidget(tab_bar)
-        v.addWidget(self._stack, 1)
-
-        # stack the whole body in a stacked widget for locked/unlocked
+        # locked / unlocked switcher
         self._body_stack = QtWidgets.QStackedWidget()
         self._body_stack.setStyleSheet(f"background: {BG};")
         self._body_stack.addWidget(self._build_locked())
@@ -739,19 +905,170 @@ class MainWindow(QtWidgets.QMainWindow):
         v.addStretch(3)
         return w
 
-    # ── pages ──────────────────────────────────────────────────────────────────
-    def _scroll_page(self) -> tuple[QtWidgets.QScrollArea, QtWidgets.QVBoxLayout]:
+    # ── columns ────────────────────────────────────────────────────────────────
+    def _column_scroll(self):
+        """Returns (scroll_area, vbox_layout) for one of the three side columns."""
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         scroll.setStyleSheet(f"background: {BG};")
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         inner = QtWidgets.QWidget()
         inner.setStyleSheet(f"background: {BG};")
         lay = QtWidgets.QVBoxLayout(inner)
-        lay.setContentsMargins(24, 20, 24, 24); lay.setSpacing(16)
+        lay.setContentsMargins(28, 22, 28, 22); lay.setSpacing(18)
         scroll.setWidget(inner)
         return scroll, lay
 
+    # ── COL 1 — Shooting ──────────────────────────────────────────────────────
+    def _col_shooting(self) -> QtWidgets.QWidget:
+        scroll, lay = self._column_scroll()
+        lay.addWidget(ColumnHeader("Shooting"))
+        lay.addSpacing(2)
+
+        # Open shot timing
+        self._sl_normal = BigStepSlider("Open Shot Timing", 50, 100, "%", 1,
+                                        default=float(self._data.get("timing_value", 95.0)))
+        self._sl_normal.valueChanged.connect(
+            lambda x: (self._set("timing_value", x), setattr(_engine, "threshold_normal", x / 100.0)))
+        _engine.threshold_normal = self._sl_normal.value() / 100.0
+        lay.addWidget(self._sl_normal)
+
+        lay.addWidget(_hr())
+
+        # Contested
+        self._sl_l2 = BigStepSlider("Contested Shot", 50, 100, "%", 1,
+                                    default=float(self._data.get("shot_confidence", 75.0)))
+        self._sl_l2.valueChanged.connect(
+            lambda x: (self._set("shot_confidence", x), setattr(_engine, "threshold_l2", x / 100.0)))
+        _engine.threshold_l2 = self._sl_l2.value() / 100.0
+        lay.addWidget(self._sl_l2)
+
+        lay.addWidget(_hr())
+
+        # Release Delay (ms)
+        self._sl_tempo = BigStepSlider("Release Delay", 0, 200, "ms", 0,
+                                       default=float(self._data.get("rhythm_tempo_ms", 39)),
+                                       small_step=1, big_step=5)
+        self._sl_tempo.valueChanged.connect(
+            lambda x: (self._set("rhythm_tempo_ms", x), setattr(_engine, "tempo_ms", int(x))))
+        _engine.tempo_ms = int(self._sl_tempo.value())
+        lay.addWidget(self._sl_tempo)
+
+        # Toggles below the sliders
+        self._tog_tempo = StateToggle("Use Release Delay")
+        self._tog_tempo.setChecked(bool(self._data.get("rhythm_enabled", False)))
+        self._tog_tempo.toggled.connect(
+            lambda v: (self._set("rhythm_enabled", v), setattr(_engine, "tempo", v)))
+        _engine.tempo = bool(self._data.get("rhythm_enabled", False))
+        lay.addWidget(self._tog_tempo)
+
+        self._tog_stick_tempo = StateToggle("Smart Stick Tempo")
+        self._tog_stick_tempo.setChecked(bool(self._data.get("stick_tempo_enabled", False)))
+        self._tog_stick_tempo.toggled.connect(
+            lambda v: (self._set("stick_tempo_enabled", v), setattr(_engine, "stick_tempo_enabled", v)))
+        _engine.stick_tempo_enabled = bool(self._data.get("stick_tempo_enabled", False))
+        lay.addWidget(self._tog_stick_tempo)
+
+        self._tog_quickstop = StateToggle("Quickstop")
+        self._tog_quickstop.setChecked(bool(self._data.get("quickstop_enabled", False)))
+        self._tog_quickstop.toggled.connect(
+            lambda v: (self._set("quickstop_enabled", v), setattr(_engine, "quickstop_enabled", v)))
+        _engine.quickstop_enabled = bool(self._data.get("quickstop_enabled", False))
+        lay.addWidget(self._tog_quickstop)
+
+        lay.addStretch(1)
+        return scroll
+
+    # ── COL 2 — Defense ───────────────────────────────────────────────────────
+    def _col_defense(self) -> QtWidgets.QWidget:
+        scroll, lay = self._column_scroll()
+        lay.addWidget(ColumnHeader("Defense"))
+        lay.addSpacing(2)
+
+        master = StateToggle("Smart Defense")
+        master.setChecked(bool(self._data.get("defense_enabled", False)))
+        master.toggled.connect(
+            lambda v: (self._set("defense_enabled", v), setattr(_engine, "defense_enabled", v)))
+        _engine.defense_enabled = bool(self._data.get("defense_enabled", False))
+        lay.addWidget(master)
+
+        hint = QtWidgets.QLabel("Press D-PAD UP while playing to toggle on / off")
+        hint.setFont(ui_font(8)); hint.setStyleSheet(f"color: {DIM};")
+        hint.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(hint)
+
+        lay.addWidget(_hr())
+
+        section = QtWidgets.QLabel("HELPERS")
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
+        f.setPointSize(8); f.setWeight(QtGui.QFont.Weight(700))
+        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 2.0)
+        section.setFont(f)
+        section.setStyleSheet(f"color: {DIM};")
+        section.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(section)
+
+        sub_map = [
+            ("defense_anti_blowby",       "Stay Tight",            "defense_anti_blowby"),
+            ("defense_auto_hands_up",     "Auto Hands Up",         "defense_auto_hands_up"),
+            ("defense_contest_assist",    "Auto Contest Shots",    "defense_contest_assist"),
+            ("defense_lateral_boost",     "Quicker Side Steps",    "defense_lateral_boost"),
+            ("defense_sensitivity_boost", "Sharper Stick Response","defense_sensitivity_boost"),
+        ]
+        for key, label, attr in sub_map:
+            sub = StateToggle(label)
+            sub.setChecked(bool(self._data.get(key, True)))
+            def _make(k=key, a=attr):
+                def _on(v): self._set(k, v); setattr(_engine, a, v)
+                return _on
+            sub.toggled.connect(_make())
+            setattr(_engine, attr, bool(self._data.get(key, True)))
+            lay.addWidget(sub)
+
+        lay.addStretch(1)
+        return scroll
+
+    # ── COL 3 — Boosts + Live Stats ───────────────────────────────────────────
+    def _col_boosts_stats(self) -> QtWidgets.QWidget:
+        scroll, lay = self._column_scroll()
+        lay.addWidget(ColumnHeader("Boosts"))
+        lay.addSpacing(2)
+
+        stam = StateToggle("Never Run Out of Stamina")
+        stam.setChecked(bool(self._data.get("infinite_stamina", False)))
+        stam.toggled.connect(
+            lambda v: (self._set("infinite_stamina", v), setattr(_engine, "infinite_stamina", v)))
+        _engine.infinite_stamina = bool(self._data.get("infinite_stamina", False))
+        lay.addWidget(stam)
+
+        lat = StateToggle("Reduce Lag")
+        lat.setChecked(bool(self._data.get("low_latency", True)))
+        def _lat(v):
+            self._set("low_latency", v)
+            if _NETOPT_OK: (_net_apply if v else _net_restore)()
+        lat.toggled.connect(_lat)
+        if bool(self._data.get("low_latency", True)) and _NETOPT_OK:
+            _net_apply()
+        lay.addWidget(lat)
+
+        lay.addSpacing(8)
+        lay.addWidget(_hr())
+        lay.addSpacing(8)
+        lay.addWidget(ColumnHeader("Live Stats"))
+        lay.addSpacing(2)
+
+        self._st_rel = StatLine("Shots Made", "0")
+        self._st_ses = StatLine("Time Left", self._time_left_val())
+        self._st_key = StatLine("Plan", validate(str(self._data.get("discord_id","")))[1] or "—")
+        lay.addWidget(self._st_rel)
+        lay.addWidget(self._st_ses)
+        lay.addWidget(self._st_key)
+
+        lay.addStretch(1)
+        return scroll
+
+    # ── DEPRECATED tab pages (kept as no-ops; not wired into the new 3-col body)
     def _pg_shooting(self) -> QtWidgets.QWidget:
         scroll, lay = self._scroll_page()
 
