@@ -240,8 +240,8 @@ LabsMainWindow::LabsMainWindow(QWidget* parent)
     m_log = new QPlainTextEdit(this);
     m_log->setObjectName(QStringLiteral("logStrip"));
     m_log->setReadOnly(true);
-    m_log->setMinimumHeight(160);
-    m_log->setMaximumHeight(220);
+    m_log->setMinimumHeight(70);
+    m_log->setMaximumHeight(110);
     m_log->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_log->setLineWrapMode(QPlainTextEdit::NoWrap);
 
