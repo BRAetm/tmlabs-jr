@@ -71,15 +71,22 @@ def _resolve_settings(s: dict) -> dict:
 def run(settings: dict | None = None,
         stop_event: "threading.Event | None" = None,
         on_shot=None,
-        on_status=None) -> int:
+        on_status=None,
+        on_shot_outcome=None) -> int:
     """
     Block on the engine. Returns when stop_event is set or capture errors fatally.
 
-    settings : dict (see DEFAULT_SETTINGS for keys)
+    settings   : dict (see DEFAULT_SETTINGS for keys)
     stop_event : optional Event the caller sets to stop the engine cleanly.
                  If None, the function installs SIGINT/SIGTERM handlers instead.
     on_shot    : optional callback(shots_fired:int, l2:bool) called on each shot.
     on_status  : optional callback(state:dict) called whenever calibration progresses.
+    on_shot_outcome : optional callback(threshold_used:float, outcome:str, l2:bool)
+                 — called ~150ms after each shot with the detected outcome:
+                   "green" (perfect / green-zone flash detected)
+                   "normal" (meter cleared without green surge)
+                   "miss" (no clear outcome — likely early/late)
+                 Used by AI-Vision for self-tuning the threshold.
     """
     cfg = _resolve_settings(settings or {})
 
@@ -151,6 +158,13 @@ def run(settings: dict | None = None,
     cal_l2_seen = 0
     every_n     = max(1, cfg["detect_every_n"])
     frame_n     = 0
+
+    # Outcome-detection state. After each fire we sample ~6 frames to read
+    # the green-zone flash. Captures the threshold + l2 used for the shot
+    # so AiVision can correlate outcomes per setting.
+    pending_outcome = None  # dict: { fire_t, frames_left, threshold, l2, baseline_green }
+    OUTCOME_FRAMES  = 8
+
     try:
         while not _stop.is_set():
             try:
@@ -171,6 +185,33 @@ def run(settings: dict | None = None,
                 gp = _read_xinput(cfg["xi_index"])
                 l2 = bool(gp and gp.bLeftTrigger > 128)
 
+                # Outcome window — sample green-zone presence right after a shot
+                if pending_outcome and on_shot_outcome:
+                    try:
+                        gz = detector._detect_green_zone(bgr)
+                        # gz is a bbox tuple if found, None otherwise
+                        pending_outcome["green_seen"] = pending_outcome.get("green_seen", 0)
+                        if gz is not None:
+                            pending_outcome["green_seen"] += 1
+                        pending_outcome["frames_left"] -= 1
+                        if pending_outcome["frames_left"] <= 0:
+                            seen = pending_outcome["green_seen"]
+                            base = pending_outcome["baseline"]
+                            # Classify: green flash if green frames meaningfully
+                            # exceed pre-fire baseline; normal if some; miss if none.
+                            if seen >= base + 3:    outcome = "green"
+                            elif seen >= 1:         outcome = "normal"
+                            else:                   outcome = "miss"
+                            try:
+                                on_shot_outcome(pending_outcome["threshold"],
+                                                outcome,
+                                                pending_outcome["l2"])
+                            except Exception:
+                                pass
+                            pending_outcome = None
+                    except Exception:
+                        pending_outcome = None
+
                 if detector.check(bgr, l2=l2):
                     if bridge.defense_enabled:
                         bridge.contest_flick()
@@ -180,6 +221,22 @@ def run(settings: dict | None = None,
                     if on_shot:
                         try: on_shot(detector.shots_fired, l2)
                         except Exception: pass
+
+                    # Arm outcome detection — sample the next few frames for green flash.
+                    if on_shot_outcome:
+                        try:
+                            gz = detector._detect_green_zone(bgr)
+                            baseline = 1 if gz is not None else 0
+                            thr = (cfg["threshold_l2"] if l2 else cfg["threshold"])
+                            pending_outcome = {
+                                "frames_left": OUTCOME_FRAMES,
+                                "green_seen":  0,
+                                "baseline":    baseline,
+                                "threshold":   float(thr),
+                                "l2":          bool(l2),
+                            }
+                        except Exception:
+                            pass
 
                 # Calibration progress (changes only — not per frame).
                 np_n  = len(detector._peak_history)
