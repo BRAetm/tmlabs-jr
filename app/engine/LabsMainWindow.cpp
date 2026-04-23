@@ -233,7 +233,7 @@ LabsMainWindow::LabsMainWindow(QWidget* parent)
     auto* logHeaderRow = new QHBoxLayout(logHeader);
     logHeaderRow->setContentsMargins(16, 0, 10, 0);
     logHeaderRow->setSpacing(8);
-    auto* logLabel = eyebrowLabel(QStringLiteral("script output"), logHeader);
+    auto* logLabel = eyebrowLabel(QStringLiteral("output log"), logHeader);
     auto* clearBtn = new QPushButton(QStringLiteral("clear"), logHeader);
     clearBtn->setProperty("ghost", true);
     clearBtn->setMinimumHeight(22);
@@ -313,8 +313,8 @@ LabsMainWindow::LabsMainWindow(QWidget* parent)
             this, &LabsMainWindow::onModeChanged);
 
     refreshDevicesList();
-    appendLog(QStringLiteral("plugins: %1  |  sources: %2  |  ctrl sinks: %3")
-              .arg(n).arg(m_frameSources.size()).arg(m_ctrlSinks.size()));
+    qInfo() << "plugins:" << n << "sources:" << m_frameSources.size()
+            << "ctrl sinks:" << m_ctrlSinks.size();
     applyThemeImage();
     updateActions();
 }
@@ -733,7 +733,7 @@ void LabsMainWindow::stopActiveSource()
 void LabsMainWindow::onModeChanged(int index)
 {
     applyMode(static_cast<Mode>(qBound(0, index, 1)));
-    appendLog(QStringLiteral("mode: %1").arg(m_modeBox->currentText()));
+    qInfo() << "mode:" << m_modeBox->currentText();
 }
 
 // ── actions ─────────────────────────────────────────────────────────────────
@@ -743,7 +743,7 @@ void LabsMainWindow::onPickWindow()
     if (!m_activeSource) return;
     const quintptr hwnd = static_cast<quintptr>(winId());
     if (m_activeSource->showPicker(hwnd)) {
-        appendLog(QStringLiteral("target → %1").arg(m_activeSource->targetLabel()));
+        qInfo() << "target:" << m_activeSource->targetLabel();
     }
     updateActions();
 }
@@ -785,7 +785,7 @@ void LabsMainWindow::onStart()
         const QString label = m_activeSource->targetLabel();
         if (m_targetLabel) m_targetLabel->setText(label);
         m_scriptStatus->setText(QStringLiteral("running"));
-        appendLog(QStringLiteral("capture started: %1").arg(label.isEmpty() ? QStringLiteral("(no target)") : label));
+        appendLog(QStringLiteral("Engine started — %1").arg(label.isEmpty() ? QStringLiteral("no target") : label));
     } else {
         const Mode mode = static_cast<Mode>(m_modeBox->currentIndex());
         appendLog(mode == Mode::PS
@@ -800,7 +800,7 @@ void LabsMainWindow::onStop()
     stopActiveSource();
     if (m_targetLabel) m_targetLabel->setText(QString());
     m_scriptStatus->setText(QStringLiteral("idle"));
-    appendLog(QStringLiteral("stopped"));
+    appendLog(QStringLiteral("Engine stopped"));
     updateActions();
 }
 
@@ -875,7 +875,7 @@ void LabsMainWindow::onRunScript()
     }
 
     m_scriptStatus->setText(QStringLiteral("running"));
-    appendLog(QStringLiteral("script started: %1").arg(fi.fileName()));
+    appendLog(QStringLiteral("Script started — %1").arg(fi.fileName()));
     updateActions();
     if (m_settings) m_settings->setValue(QStringLiteral("cv/scriptPath"), path);
 }
@@ -893,7 +893,8 @@ void LabsMainWindow::onScriptFinished(int exitCode, int /*exitStatus*/)
     m_scriptStatus->setText(exitCode == 0
         ? QStringLiteral("exited")
         : QStringLiteral("exited (%1)").arg(exitCode));
-    appendLog(QStringLiteral("script finished (exit %1)").arg(exitCode));
+    appendLog(QStringLiteral("Script stopped"));
+    Q_UNUSED(exitCode);
     updateActions();
 }
 
@@ -930,8 +931,15 @@ void LabsMainWindow::updateActions()
     }
     if (m_modeBox)      m_modeBox ->setEnabled(!running);
     const bool haveScript = m_scriptCombo && !m_scriptCombo->currentData().toString().trimmed().isEmpty();
-    if (m_scriptRunBtn)  m_scriptRunBtn ->setEnabled(haveSource && haveScript && !scriptRunning);
-    if (m_scriptStopBtn) m_scriptStopBtn->setEnabled(scriptRunning);
+    if (m_scriptRunBtn) {
+        m_scriptRunBtn->setEnabled(haveSource && haveScript && !scriptRunning);
+        m_scriptRunBtn->setVisible(!scriptRunning);
+    }
+    if (m_scriptStopBtn) {
+        m_scriptStopBtn->setText(QStringLiteral("STOP SCRIPT"));
+        m_scriptStopBtn->setEnabled(scriptRunning);
+        m_scriptStopBtn->setVisible(scriptRunning);
+    }
 
     // State pill — single source of truth for "is the engine doing anything".
     if (m_statePill) {
