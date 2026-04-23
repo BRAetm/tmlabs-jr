@@ -26,6 +26,7 @@ class IControllerSource;
 class IControllerSink;
 class LabsBackgroundWidget;
 class ControllerMonitorWidget;
+class Ps5Discovery;
 
 class LabsMainWindow : public QMainWindow {
     Q_OBJECT
@@ -118,6 +119,8 @@ private:
 
     QTimer*      m_fpsTimer = nullptr;
     qint64       m_lastFrameCount = 0;
+
+    Ps5Discovery* m_ps5Discovery = nullptr;
 };
 
 } // namespace Labs

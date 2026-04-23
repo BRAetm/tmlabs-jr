@@ -10,6 +10,8 @@ add_executable(LabsEngine WIN32
     LabsThemeDialog.cpp
     ControllerMonitorWidget.h
     ControllerMonitorWidget.cpp
+    Ps5Discovery.h
+    Ps5Discovery.cpp
     resources/labs.qrc
     resources/labs.rc
 )
@@ -19,6 +21,7 @@ target_link_libraries(LabsEngine PRIVATE
     Qt6::Gui
     Qt6::Widgets
     Qt6::Svg
+    Qt6::Network
     LabsCore
 )
 

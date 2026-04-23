@@ -4,6 +4,7 @@
 #include "LabsLogoWidget.h"
 #include "LabsTheme.h"
 #include "LabsThemeDialog.h"
+#include "Ps5Discovery.h"
 
 #include "IPlugin.h"
 #include "PluginHost.h"
@@ -317,6 +318,40 @@ LabsMainWindow::LabsMainWindow(QWidget* parent)
             << "ctrl sinks:" << m_ctrlSinks.size();
     applyThemeImage();
     updateActions();
+
+    // Auto-discover the user's PS5 on the LAN. If a console responds we update
+    // ps/host with its current IP — handles DHCP changes between sessions so
+    // the user never has to type an IP. Pairing must already exist (regist key).
+    const bool havePair = !m_settings->value(QStringLiteral("ps/registKey"))
+                                      .toByteArray().isEmpty();
+    if (havePair) {
+        m_ps5Discovery = new Ps5Discovery(this);
+        connect(m_ps5Discovery, &Ps5Discovery::hostsFound, this,
+                [this](QList<Ps5Discovery::Host> hosts) {
+            if (hosts.isEmpty()) {
+                appendLog(QStringLiteral("PS5 discovery: no console found on network"));
+                return;
+            }
+            // Prefer a PS5 over a PS4, otherwise first one wins.
+            const Ps5Discovery::Host* pick = &hosts.first();
+            for (const auto& h : hosts) {
+                if (h.type.compare(QStringLiteral("PS5"), Qt::CaseInsensitive) == 0) {
+                    pick = &h; break;
+                }
+            }
+            const QString prev = m_settings->value(QStringLiteral("ps/host")).toString();
+            if (prev != pick->ip) {
+                m_settings->setValue(QStringLiteral("ps/host"), pick->ip);
+                m_settings->sync();
+                appendLog(QStringLiteral("PS5 found: %1 (%2) — saved as host")
+                          .arg(pick->name.isEmpty() ? QStringLiteral("(unnamed)") : pick->name,
+                               pick->ip));
+            } else {
+                appendLog(QStringLiteral("PS5 confirmed at %1").arg(pick->ip));
+            }
+        });
+        m_ps5Discovery->discover(2500);
+    }
 }
 
 void LabsMainWindow::applyThemeImage()
