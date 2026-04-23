@@ -212,6 +212,7 @@ class EngineRunner:
         self.stick_tempo_enabled      = False
         self.quickstop_enabled        = False
         self.gpu_index                = 0
+        self.lite_mode                = False  # True = mss + 60fps + every-2; False = BetterCam + 120fps
 
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -257,13 +258,23 @@ class EngineRunner:
                region["left"] + region["width"],
                region["top"]  + region["height"])
 
-        if _BC_OK:
+        # Pro mode = BetterCam (GPU, 120fps target, every frame)
+        # Lite mode = mss (CPU, 60fps cap, every 2nd frame)
+        use_bc = (_BC_OK and not self.lite_mode)
+        every_n = 2 if self.lite_mode else 1
+        target_fps = 120 if not self.lite_mode else 60
+        frame_n = 0
+
+        if use_bc:
             camera = _bc.create(device_idx=self.gpu_index, output_color="BGR")
-            camera.start(region=reg, target_fps=240, video_mode=True)
+            camera.start(region=reg, target_fps=target_fps, video_mode=True)
             try:
                 while not self._stop.is_set():
                     bgr = camera.get_latest_frame()
                     if bgr is None:
+                        continue
+                    frame_n += 1
+                    if frame_n % every_n != 0:
                         continue
                     gp = _read_xi()
                     l2 = bool(gp and gp.bLeftTrigger > 128)
@@ -288,6 +299,11 @@ class EngineRunner:
                 while not self._stop.is_set():
                     t0  = time.perf_counter()
                     bgr = _cv2.cvtColor(_np.asarray(sct.grab(region)), _cv2.COLOR_BGRA2BGR)
+                    frame_n += 1
+                    if frame_n % every_n != 0:
+                        wait = 1.0 / target_fps - (time.perf_counter() - t0)
+                        if wait > 0: time.sleep(wait)
+                        continue
                     gp  = _read_xi()
                     l2  = bool(gp and gp.bLeftTrigger > 128)
                     detector.threshold_normal = self.threshold_normal
@@ -301,7 +317,7 @@ class EngineRunner:
                     fc += 1
                     if (t := time.perf_counter()) - tw >= 1.0:
                         self.fps_cur = fc / (t - tw); fc = 0; tw = t
-                    wait = 1.0 / self.fps_cap - (time.perf_counter() - t0)
+                    wait = 1.0 / target_fps - (time.perf_counter() - t0)
                     if wait > 0: time.sleep(wait)
             _pt_run[0] = False
 
@@ -958,8 +974,12 @@ class MainWindow(QtWidgets.QMainWindow):
             pc_row.addWidget(rb)
         pc = str(self._data.get("pc_type", "lite")).lower()
         (self._pc_lite if pc != "pro" else self._pc_pro).setChecked(True)
-        self._pc_lite.toggled.connect(lambda on: on and self._set("pc_type", "lite"))
-        self._pc_pro.toggled.connect(lambda on: on and self._set("pc_type", "pro"))
+        _engine.lite_mode = (pc != "pro")
+        def _pick_pc(kind):
+            self._set("pc_type", kind)
+            _engine.lite_mode = (kind == "lite")
+        self._pc_lite.toggled.connect(lambda on: on and _pick_pc("lite"))
+        self._pc_pro.toggled.connect(lambda on: on and _pick_pc("pro"))
         cc.addLayout(pc_row)
 
         # GPU index (BetterCam device_idx)

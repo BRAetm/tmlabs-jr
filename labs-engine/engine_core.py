@@ -65,26 +65,25 @@ def main():
     p.add_argument("--no-hands-up",  action="store_true", dest="no_hands_up")
     p.add_argument("--xi-index",     type=int,   default=0, dest="xi_index")
     p.add_argument("--gpu",          type=int,   default=0, help="BetterCam device_idx")
-    p.add_argument("--target-fps",     type=int, default=None, dest="target_fps",
-                   help="BetterCam capture target FPS (auto: 120 high-end / 60 mss-fallback)")
-    p.add_argument("--passthrough-hz", type=int, default=None, dest="passthrough_hz",
-                   help="XInput passthrough rate Hz (auto: 500 high-end / 250 mss-fallback)")
-    p.add_argument("--detect-every-n", type=int, default=None, dest="detect_every_n",
-                   help="Process every Nth frame (auto: 1 high-end / 2 mss-fallback)")
+    p.add_argument("--target-fps",     type=int, default=120, dest="target_fps",
+                   help="BetterCam capture target FPS (default 120; 60 for low-end)")
+    p.add_argument("--passthrough-hz", type=int, default=500, dest="passthrough_hz",
+                   help="XInput passthrough rate Hz (default 500; 250 for low-end)")
+    p.add_argument("--detect-every-n", type=int, default=1, dest="detect_every_n",
+                   help="Process every Nth captured frame (default 1; 2 for low-end)")
+    p.add_argument("--low-end",        action="store_true", dest="low_end",
+                   help="Preset: 60fps capture / 250Hz passthrough / every-2 frames")
     p.add_argument("--capture",      choices=["bettercam", "mss"], default="bettercam",
                    help="Capture backend (mss is slower but works without DXGI/GPU)")
     args = p.parse_args()
 
     print(f"[ENGINE] pid={os.getpid()}", flush=True)
 
-    # Tentative high-end defaults so bettercam init has a value;
-    # downgraded later if we fall back to mss.
-    fps_was_default     = (args.target_fps     is None)
-    pt_was_default      = (args.passthrough_hz is None)
-    every_n_was_default = (args.detect_every_n is None)
-    if fps_was_default:     args.target_fps     = 120
-    if pt_was_default:      args.passthrough_hz = 500
-    if every_n_was_default: args.detect_every_n = 1
+    # --low-end shortcut: only applies to values still at their defaults
+    if args.low_end:
+        if args.target_fps     == 120: args.target_fps     = 60
+        if args.passthrough_hz == 500: args.passthrough_hz = 250
+        if args.detect_every_n == 1:   args.detect_every_n = 2
 
     # find LabsEngine's Remote Play window
     region = find_window()
@@ -119,15 +118,9 @@ def main():
                       "width": reg[2]-reg[0], "height": reg[3]-reg[1]}
         print(f"[ENGINE] mss region={mss_region}  (CPU capture)", flush=True)
 
-    # If we fell back to mss and the user didn't set a value, downgrade defaults
-    high_end = (capture_mode == "bettercam")
-    if not high_end:
-        if fps_was_default:     args.target_fps     = 60
-        if pt_was_default:      args.passthrough_hz = 250
-        if every_n_was_default: args.detect_every_n = 2
-    print(f"[ENGINE] perf preset: target_fps={args.target_fps} "
-          f"passthrough_hz={args.passthrough_hz} detect_every_n={args.detect_every_n} "
-          f"({'high-end' if high_end else 'low-end'})", flush=True)
+    print(f"[ENGINE] perf: target_fps={args.target_fps} "
+          f"passthrough_hz={args.passthrough_hz} detect_every_n={args.detect_every_n}",
+          flush=True)
 
     detector = ShotMeterDetector(args.threshold, args.threshold_l2)
     bridge   = PSControllerBridge()
