@@ -178,8 +178,9 @@ def main():
                 if capture_mode == "bettercam":
                     bgr = cam.get_latest_frame()
                 else:
+                    # mss returns BGRA — slice instead of cvtColor: zero-copy view, no alloc.
                     bgra = np.asarray(sct.grab(mss_region))
-                    bgr  = cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR)
+                    bgr  = bgra[:, :, :3]
                 if bgr is None:
                     continue
 

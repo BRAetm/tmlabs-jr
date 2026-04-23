@@ -147,6 +147,20 @@ QPushButton[ghost="true"] {
 }
 QPushButton[ghost="true"]:hover { color: %TEXT%; border-color: %BORDERBR%; }
 
+/* Segmented control halves (Lite | Pro) */
+QPushButton[segLeft="true"], QPushButton[segRight="true"] {
+    background: %BGSUB%; color: %TEXTMUTED%;
+    border: 1px solid %BORDER%;
+    padding: 0 8px; font-weight: 600; font-size: 11px;
+    letter-spacing: 0.4px;
+}
+QPushButton[segLeft="true"]  { border-top-left-radius: 6px; border-bottom-left-radius: 6px;  border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
+QPushButton[segRight="true"] { border-top-right-radius: 6px; border-bottom-right-radius: 6px; border-top-left-radius: 0;  border-bottom-left-radius: 0; }
+QPushButton[segLeft="true"]:hover, QPushButton[segRight="true"]:hover { color: %TEXT%; }
+QPushButton[segLeft="true"]:checked, QPushButton[segRight="true"]:checked {
+    background: %ACCENT%; color: white; border-color: %ACCENT%;
+}
+
 QComboBox {
     background: %SURFACE%; color: %TEXT%;
     border: 1px solid %BORDER%; border-radius: 6px; padding: 5px 10px; min-width: 160px;

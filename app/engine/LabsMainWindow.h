@@ -96,6 +96,8 @@ private:
     QPushButton* m_scriptStopBtn   = nullptr;
     QLabel*      m_scriptStatus    = nullptr;
     QProcess*    m_scriptProc      = nullptr;
+    QPushButton* m_perfLiteBtn     = nullptr;
+    QPushButton* m_perfProBtn      = nullptr;
 
     // Center stage.
     QLabel*          m_targetLabel = nullptr;

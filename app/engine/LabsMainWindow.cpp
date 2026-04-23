@@ -401,6 +401,34 @@ QWidget* LabsMainWindow::buildTopBar()
     m_btnStop ->setProperty("danger", true);
     m_btnStop->setVisible(false);  // only show when running
 
+    // Performance-tier segmented toggle. Persisted as cv/perfMode and applied
+    // to BOTH the streaming session (ps/fps + ps/bitrate + ps/codec) and the
+    // python script (--low-end).
+    m_perfLiteBtn = new QPushButton(QStringLiteral("Lite  CPU"), bar);
+    m_perfProBtn  = new QPushButton(QStringLiteral("Pro  GPU"),  bar);
+    m_perfLiteBtn->setCheckable(true); m_perfProBtn->setCheckable(true);
+    m_perfLiteBtn->setProperty("segLeft",  true);
+    m_perfProBtn ->setProperty("segRight", true);
+    m_perfLiteBtn->setMinimumHeight(34); m_perfProBtn->setMinimumHeight(34);
+    {
+        const QString saved = m_settings ? m_settings->value(
+            QStringLiteral("cv/perfMode"), QStringLiteral("pro")).toString()
+            : QStringLiteral("pro");
+        const bool lite = (saved.toLower() == QStringLiteral("lite"));
+        m_perfLiteBtn->setChecked(lite);
+        m_perfProBtn ->setChecked(!lite);
+    }
+    connect(m_perfLiteBtn, &QPushButton::clicked, this, [this]() {
+        m_perfLiteBtn->setChecked(true); m_perfProBtn->setChecked(false);
+        if (m_settings) { m_settings->setValue(QStringLiteral("cv/perfMode"), "lite"); m_settings->sync(); }
+        appendLog(QStringLiteral("perf: Lite (CPU)  → ps/fps=30 ps/bitrate=5Mbps  script: --low-end"));
+    });
+    connect(m_perfProBtn, &QPushButton::clicked, this, [this]() {
+        m_perfProBtn->setChecked(true); m_perfLiteBtn->setChecked(false);
+        if (m_settings) { m_settings->setValue(QStringLiteral("cv/perfMode"), "pro"); m_settings->sync(); }
+        appendLog(QStringLiteral("perf: Pro (GPU)  → ps/fps=60 ps/bitrate=15Mbps script: full"));
+    });
+
     connect(m_btnPick,  &QPushButton::clicked, this, &LabsMainWindow::onPickWindow);
     connect(m_btnPair,  &QPushButton::clicked, this, &LabsMainWindow::onPair);
     connect(btnTheme,   &QPushButton::clicked, this, &LabsMainWindow::onOpenTheme);
@@ -421,6 +449,13 @@ QWidget* LabsMainWindow::buildTopBar()
     row->addWidget(m_btnPick);
     row->addWidget(m_btnPair);
     row->addWidget(btnTheme);
+    row->addSpacing(8);
+    // perf segmented control sits right before Start/Stop so it reads as the choice
+    auto* perfWrap = new QHBoxLayout();
+    perfWrap->setSpacing(0);
+    perfWrap->addWidget(m_perfLiteBtn);
+    perfWrap->addWidget(m_perfProBtn);
+    row->addLayout(perfWrap);
     row->addSpacing(6);
     row->addWidget(m_btnStart);
     row->addWidget(m_btnStop);
@@ -470,7 +505,7 @@ QWidget* LabsMainWindow::buildScriptsRail()
         }
 
         for (const QString& path : found) {
-            m_scriptCombo->addItem(QFileInfo(path).completeBaseName(), path);
+            m_scriptCombo->addItem(QFileInfo(path).fileName(), path);
         }
 
         int idx = -1;
@@ -731,6 +766,28 @@ void LabsMainWindow::onStart()
     if (m_settings && m_scriptCombo) {
         m_settings->setValue(QStringLiteral("cv/scriptPath"), m_scriptCombo->currentData().toString());
     }
+
+    // Apply perf-tier settings to the streaming pipeline BEFORE starting the source.
+    // The PS Remote Play plugin reads ps/fps, ps/bitrate, ps/codec at start() time.
+    if (m_settings && m_perfLiteBtn) {
+        const bool lite = m_perfLiteBtn->isChecked();
+        if (lite) {
+            // Low-end: half the framerate, third the bitrate, H.264 (cheaper to decode).
+            // Targets 30fps stable on integrated GPUs / weak CPUs.
+            m_settings->setValue(QStringLiteral("ps/fps"),     30);
+            m_settings->setValue(QStringLiteral("ps/bitrate"), 5000);
+            m_settings->setValue(QStringLiteral("ps/codec"),   0);   // 0 = H.264
+            appendLog(QStringLiteral("engine: LITE (CPU)  — 30fps · 5 Mbps · H.264"));
+        } else {
+            // High-end: full framerate, full bitrate, H.264 (DualSense quality).
+            m_settings->setValue(QStringLiteral("ps/fps"),     60);
+            m_settings->setValue(QStringLiteral("ps/bitrate"), 15000);
+            m_settings->setValue(QStringLiteral("ps/codec"),   0);
+            appendLog(QStringLiteral("engine: PRO (GPU)  — 60fps · 15 Mbps · H.264"));
+        }
+        m_settings->sync();
+    }
+
     if (!m_activeSource) { appendLog(QStringLiteral("no source for this mode")); return; }
     if (m_activeSource->start()) {
         m_lastFrameCount = m_activeSource->frameCount();
@@ -777,7 +834,7 @@ void LabsMainWindow::onBrowseScript()
     if (m_scriptCombo) {
         int idx = m_scriptCombo->findData(picked);
         if (idx < 0) {
-            m_scriptCombo->addItem(QFileInfo(picked).completeBaseName(), picked);
+            m_scriptCombo->addItem(QFileInfo(picked).fileName(), picked);
             idx = m_scriptCombo->count() - 1;
         }
         m_scriptCombo->setCurrentIndex(idx);
@@ -808,7 +865,14 @@ void LabsMainWindow::onRunScript()
 
     const QFileInfo fi(path);
     m_scriptProc->setWorkingDirectory(fi.absolutePath());
-    m_scriptProc->start(QStringLiteral("python"), { path });
+
+    // Build the script arg list. Pass --low-end when the rail toggle is set
+    // to Lite. Future: pass --threshold etc from settings UI.
+    QStringList args { path };
+    const bool lite = m_perfLiteBtn && m_perfLiteBtn->isChecked();
+    if (lite) args << QStringLiteral("--low-end");
+
+    m_scriptProc->start(QStringLiteral("python"), args);
 
     if (!m_scriptProc->waitForStarted(3000)) {
         appendLog(QStringLiteral("failed to start python — is it on PATH?"));
