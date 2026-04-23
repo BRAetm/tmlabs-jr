@@ -634,9 +634,9 @@ class MainWindow(QtWidgets.QMainWindow):
         th = QtWidgets.QHBoxLayout(tab_bar)
         th.setContentsMargins(20, 0, 0, 0); th.setSpacing(0)
 
-        pages    = ["Shooting", "Defense", "Features", "Engine", "Live Stats"]
+        pages    = ["Shooting", "Defense", "Features", "Live Stats"]
         builders = [self._pg_shooting, self._pg_defense,
-                    self._pg_features, self._pg_engine, self._pg_stats]
+                    self._pg_features, self._pg_stats]
 
         self._tabs  = QtWidgets.QButtonGroup(w); self._tabs.setExclusive(True)
         self._stack = QtWidgets.QStackedWidget()
@@ -846,102 +846,6 @@ class MainWindow(QtWidgets.QMainWindow):
         lay.addStretch(1)
         return scroll
 
-    def _pg_engine(self) -> QtWidgets.QWidget:
-        scroll, lay = self._scroll_page()
-
-        # status card
-        s_card = Card()
-        sc = QtWidgets.QHBoxLayout(s_card)
-        sc.setContentsMargins(20, 16, 20, 16); sc.setSpacing(20)
-
-        dot_col = QtWidgets.QVBoxLayout(); dot_col.setSpacing(2)
-        self._eng_dot = QtWidgets.QLabel("●")
-        self._eng_dot.setFont(ui_font(14))
-        self._eng_dot.setStyleSheet(f"color: {FAINT};")
-        dot_col.addWidget(self._eng_dot)
-        sc.addLayout(dot_col)
-
-        txt_col = QtWidgets.QVBoxLayout(); txt_col.setSpacing(2)
-        self._eng_status = QtWidgets.QLabel("Ready")
-        self._eng_status.setFont(ui_font(13, 600))
-        self._eng_status.setStyleSheet(f"color: {TEXT};")
-        txt_col.addWidget(self._eng_status)
-        self._eng_sub = QtWidgets.QLabel("Engine idle — click Start Engine to begin")
-        self._eng_sub.setFont(ui_font(9))
-        self._eng_sub.setStyleSheet(f"color: {DIM};")
-        txt_col.addWidget(self._eng_sub)
-        sc.addLayout(txt_col, 1)
-
-        lay.addWidget(s_card)
-
-        # controls card
-        c_card = Card()
-        cc = QtWidgets.QVBoxLayout(c_card)
-        cc.setContentsMargins(20, 18, 20, 20); cc.setSpacing(14)
-        cc.addWidget(SectionLabel("Control"))
-
-        # PC type row
-        pc_row = QtWidgets.QHBoxLayout(); pc_row.setSpacing(8)
-        pc_lbl = QtWidgets.QLabel("PC type")
-        pc_lbl.setFont(label_font(8)); pc_lbl.setStyleSheet(f"color: {DIM};")
-        pc_row.addWidget(pc_lbl)
-        pc_row.addStretch(1)
-
-        self._pc_lite = QtWidgets.QRadioButton("Lite  CPU")
-        self._pc_pro  = QtWidgets.QRadioButton("Pro  GPU")
-        for rb in (self._pc_lite, self._pc_pro):
-            rb.setFont(label_font(8))
-            rb.setStyleSheet(f"color: {DIM}; spacing: 6px;")
-            pc_row.addWidget(rb)
-        pc = str(self._data.get("pc_type", "lite")).lower()
-        (self._pc_lite if pc != "pro" else self._pc_pro).setChecked(True)
-        _engine.lite_mode = (pc != "pro")
-        def _pick_pc(kind):
-            self._set("pc_type", kind)
-            _engine.lite_mode = (kind == "lite")
-        self._pc_lite.toggled.connect(lambda on: on and _pick_pc("lite"))
-        self._pc_pro.toggled.connect(lambda on: on and _pick_pc("pro"))
-        cc.addLayout(pc_row)
-
-        # GPU index (BetterCam device_idx)
-        gpu_row = QtWidgets.QHBoxLayout(); gpu_row.setSpacing(8)
-        gpu_lbl = QtWidgets.QLabel("Capture GPU")
-        gpu_lbl.setFont(label_font(8)); gpu_lbl.setStyleSheet(f"color: {DIM};")
-        gpu_row.addWidget(gpu_lbl)
-        gpu_row.addStretch(1)
-        self._gpu_spin = QtWidgets.QSpinBox()
-        self._gpu_spin.setRange(0, 3)
-        self._gpu_spin.setValue(int(self._data.get("gpu_index", 0)))
-        self._gpu_spin.setFixedWidth(52)
-        self._gpu_spin.setStyleSheet(f"""
-            QSpinBox {{
-                background: {SURF2}; color: {TEXT};
-                border: 1px solid {BORDER}; border-radius: 4px;
-                padding: 2px 6px; font-size: 10pt;
-            }}
-            QSpinBox::up-button, QSpinBox::down-button {{ width: 16px; }}
-        """)
-        def _gpu(v): self._set("gpu_index", v); _engine.gpu_index = v
-        self._gpu_spin.valueChanged.connect(_gpu)
-        _engine.gpu_index = int(self._data.get("gpu_index", 0))
-        gpu_row.addWidget(self._gpu_spin)
-        cc.addLayout(gpu_row)
-        cc.addWidget(_divider())
-
-        self._eng_btn = EngBtn()
-        self._eng_btn.setEnabled(ENGINE_OK)
-        self._eng_btn.clicked.connect(self._toggle_engine)
-        cc.addWidget(self._eng_btn)
-
-        if not ENGINE_OK:
-            w = QtWidgets.QLabel("opencv-python, mss, or vgamepad not installed")
-            w.setFont(ui_font(8)); w.setStyleSheet(f"color: {WARN};")
-            cc.addWidget(w)
-
-        lay.addWidget(c_card)
-        lay.addStretch(1)
-        return scroll
-
     def _pg_stats(self) -> QtWidgets.QWidget:
         scroll, lay = self._scroll_page()
         card = Card()
@@ -950,57 +854,39 @@ class MainWindow(QtWidgets.QMainWindow):
         cv.addWidget(SectionLabel("Live stats"))
 
         grid = QtWidgets.QGridLayout(); grid.setSpacing(8)
-        self._st_fps = StatBox("FPS", "--")
-        self._st_rel = StatBox("Releases", "0")
+        self._st_rel = StatBox("Shots Fired", "0")
         self._st_ses = StatBox("Time Left", self._time_left_val())
         self._st_key = StatBox("License", validate(str(self._data.get("discord_id","")))[1] or "—")
-        grid.addWidget(self._st_fps, 0, 0)
-        grid.addWidget(self._st_rel, 0, 1)
-        grid.addWidget(self._st_ses, 1, 0)
-        grid.addWidget(self._st_key, 1, 1)
+        grid.addWidget(self._st_rel, 0, 0)
+        grid.addWidget(self._st_ses, 0, 1)
+        grid.addWidget(self._st_key, 1, 0, 1, 2)
         cv.addLayout(grid)
 
         lay.addWidget(card)
         lay.addStretch(1)
         return scroll
 
-    # ── engine toggle ─────────────────────────────────────────────────────────
-    def _toggle_engine(self):
-        if not ENGINE_OK: return
-        if _engine.is_running():
-            _engine.stop()
-            self._set_eng_ui(False)
-        else:
-            _engine.start()
-            self._set_eng_ui(True)
-
-    def _set_eng_ui(self, running: bool):
-        self._eng_btn.setRunning(running)
-        self._eng_dot.setStyleSheet(f"color: {OK if running else FAINT};")
-        self._eng_status.setText("Running" if running else "Ready")
-        self._eng_sub.setText(
-            "Capturing screen — engine active" if running
-            else "Engine idle — click Start Engine to begin"
-        )
-
     # ── stats tick ────────────────────────────────────────────────────────────
     def _tick(self):
-        if not hasattr(self, "_st_fps"): return
+        """Refresh live stats — Releases + License/Time Left. The engine runs
+        continuously while this UI is alive; LabsEngine controls lifecycle."""
+        if not hasattr(self, "_st_rel"): return
         if _engine.is_running():
-            self._st_fps.setValue(f"{_engine.fps_cur:.0f}")
             self._st_rel.setValue(str(_engine.shots))
-            s = int(time.perf_counter() - _engine.start_t)
+        if hasattr(self, "_st_ses"):
             self._st_ses.setValue(self._time_left_val())
-            if not self._eng_btn._running:
-                self._set_eng_ui(True)
-        elif self._eng_btn._running:
-            self._set_eng_ui(False)
 
     # ── auth ──────────────────────────────────────────────────────────────────
     def _apply_lock(self):
         ok, dur = validate(str(self._data.get("discord_id", "")))
         if hasattr(self, "_body_stack"):
             self._body_stack.setCurrentIndex(1 if ok else 0)
+        # When unlocked, the engine runs continuously while this window is open.
+        # LabsEngine controls the lifecycle via spawn / kill; no Start button here.
+        if ok and ENGINE_OK and not _engine.is_running():
+            _engine.lite_mode = (str(self._data.get("pc_type", "high")).lower() in ("low", "lite"))
+            _engine.gpu_index = int(self._data.get("gpu_index", 0))
+            _engine.start()
         if hasattr(self, "_key_val"):
             self._key_val.setText(dur if dur else "—")
             self._key_val.setStyleSheet(
