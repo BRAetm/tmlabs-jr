@@ -13,7 +13,7 @@ DisplaySurface::DisplaySurface(QWidget* parent) : QWidget(parent)
 {
     setAutoFillBackground(true);
     QPalette pal = palette();
-    pal.setColor(QPalette::Window, QColor(20, 20, 28));
+    pal.setColor(QPalette::Window, QColor(8, 10, 16));
     setPalette(pal);
     setMinimumSize(640, 360);
 }
@@ -36,14 +36,19 @@ void DisplaySurface::paintEvent(QPaintEvent*)
         img = m_image;
     }
     if (img.isNull()) {
-        p.setPen(QColor(220, 220, 220));
-        p.drawText(rect(), Qt::AlignCenter, QStringLiteral("Display — no source"));
+        p.setPen(QColor(120, 130, 150));
+        p.drawText(rect(), Qt::AlignCenter, QStringLiteral("waiting for stream…"));
         return;
     }
-    const QSize target = size();
-    const QImage scaled = img.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    const int x = (target.width()  - scaled.width())  / 2;
-    const int y = (target.height() - scaled.height()) / 2;
+    // Higher quality scaling. Drawing at the device pixel ratio so HiDPI
+    // displays render at native resolution instead of being upscaled twice.
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    const qreal dpr = devicePixelRatioF();
+    const QSize target = size() * dpr;
+    QImage scaled = img.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(dpr);
+    const int x = (size().width()  - int(scaled.width()  / dpr)) / 2;
+    const int y = (size().height() - int(scaled.height() / dpr)) / 2;
     p.drawImage(x, y, scaled);
 }
 

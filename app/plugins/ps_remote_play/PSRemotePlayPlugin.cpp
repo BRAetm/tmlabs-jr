@@ -105,12 +105,15 @@ struct PSRemotePlayPlugin::Impl {
 
         if (w != bgraWidth || h != bgraHeight || !sws) {
             if (sws) { sws_freeContext(sws); sws = nullptr; }
+            // Lanczos = sharper than bilinear for slight upscale on display.
+            // Doesn't matter for downscale.
             sws = sws_getContext(w, h, (AVPixelFormat)src->format,
                                  w, h, AV_PIX_FMT_BGRA,
-                                 SWS_BILINEAR, nullptr, nullptr, nullptr);
+                                 SWS_LANCZOS, nullptr, nullptr, nullptr);
             bgraWidth  = w;
             bgraHeight = h;
             bgraBuf.resize(size_t(w) * size_t(h) * 4);
+            qInfo() << "[PS] stream resolution =" << w << "x" << h;
         }
         if (!sws) return;
 
