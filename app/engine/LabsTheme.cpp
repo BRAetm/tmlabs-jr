@@ -329,13 +329,16 @@ QLabel#modeLabel, QLabel#logLabel {
     background: transparent;
 }
 QPlainTextEdit#logStrip {
-    background: %BG%;
+    background: #0A0D14;
     border-top: 1px solid %BORDER%;
-    color: %TEXTMUTED%;
+    color: #C8D1E0;
     font-family: "Cascadia Mono","Consolas";
-    font-size: 11px;
-    padding: 6px 12px;
+    font-size: 12px;
+    padding: 8px 14px;
+    selection-background-color: %ACCENTH%;
+    selection-color: %TEXT%;
 }
+QPlainTextEdit#logStrip:focus { border-top-color: %ACCENT%; }
 QFrame#hrSep {
     color: %BORDER%;
     background: %BORDER%;

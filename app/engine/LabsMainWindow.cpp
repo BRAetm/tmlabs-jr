@@ -221,25 +221,39 @@ LabsMainWindow::LabsMainWindow(QWidget* parent)
     m_log = new QPlainTextEdit(this);
     m_log->setObjectName(QStringLiteral("logStrip"));
     m_log->setReadOnly(true);
-    m_log->setMaximumHeight(90);
+    m_log->setMinimumHeight(160);
+    m_log->setMaximumHeight(220);
+    m_log->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_log->setLineWrapMode(QPlainTextEdit::NoWrap);
 
-    auto* logRow = new QHBoxLayout();
-    logRow->setContentsMargins(14, 0, 10, 0);
-    logRow->setSpacing(8);
-    auto* logLabel = new QLabel(QStringLiteral("log"), this);
-    logLabel->setObjectName(QStringLiteral("logLabel"));
-    auto* clearBtn = new QPushButton(QStringLiteral("clear"), this);
+    // Log header strip — eyebrow label + clear button on a divider line above the log
+    auto* logHeader = new QWidget(this);
+    logHeader->setObjectName(QStringLiteral("logHeader"));
+    logHeader->setFixedHeight(28);
+    auto* logHeaderRow = new QHBoxLayout(logHeader);
+    logHeaderRow->setContentsMargins(16, 0, 10, 0);
+    logHeaderRow->setSpacing(8);
+    auto* logLabel = eyebrowLabel(QStringLiteral("script output"), logHeader);
+    auto* clearBtn = new QPushButton(QStringLiteral("clear"), logHeader);
+    clearBtn->setProperty("ghost", true);
+    clearBtn->setMinimumHeight(22);
     connect(clearBtn, &QPushButton::clicked, this, &LabsMainWindow::onClearLog);
-    logRow->addWidget(logLabel);
-    logRow->addWidget(m_log, 1);
-    logRow->addWidget(clearBtn);
+    logHeaderRow->addWidget(logLabel);
+    logHeaderRow->addStretch();
+    logHeaderRow->addWidget(clearBtn);
+
+    auto* logCol = new QVBoxLayout();
+    logCol->setContentsMargins(0, 0, 0, 0);
+    logCol->setSpacing(0);
+    logCol->addWidget(logHeader);
+    logCol->addWidget(m_log);
 
     auto* root = new QVBoxLayout();
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
     root->addWidget(top);
     root->addLayout(body, 1);
-    root->addLayout(logRow);
+    root->addLayout(logCol);
 
     m_bgWidget = new LabsBackgroundWidget(this);
     m_bgWidget->setLayout(root);

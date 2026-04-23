@@ -11,7 +11,7 @@ namespace Labs {
 ControllerMonitorWidget::ControllerMonitorWidget(QWidget* parent)
     : QWidget(parent)
 {
-    setMinimumSize(700, 420);
+    setMinimumSize(720, 460);
     setAttribute(Qt::WA_OpaquePaintEvent, false);
 }
 
@@ -36,298 +36,391 @@ void ControllerMonitorWidget::pushState(const ControllerState& state)
     }, Qt::QueuedConnection);
 }
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+namespace {
+
+QColor mix(QColor a, QColor b, qreal t)
+{
+    return QColor(
+        int(a.red()   * (1 - t) + b.red()   * t),
+        int(a.green() * (1 - t) + b.green() * t),
+        int(a.blue()  * (1 - t) + b.blue()  * t));
+}
+
+void drawStickWell(QPainter& p, QRectF rect, float x, float y, float deadzone,
+                   const QColor& trackBg, const QColor& trackBorder,
+                   const QColor& accent, const QColor& dim, bool pressed)
+{
+    // Track (well) — circular
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setBrush(trackBg);
+    p.setPen(QPen(trackBorder, 1.5));
+    p.drawEllipse(rect);
+
+    // Crosshairs
+    p.setPen(QPen(trackBorder, 1, Qt::DotLine));
+    p.drawLine(QPointF(rect.left() + 6, rect.center().y()),
+               QPointF(rect.right() - 6, rect.center().y()));
+    p.drawLine(QPointF(rect.center().x(), rect.top() + 6),
+               QPointF(rect.center().x(), rect.bottom() - 6));
+
+    // Dead-zone ring
+    p.setPen(QPen(dim, 1, Qt::DotLine));
+    const qreal dzR = (rect.width() / 2 - 4) * deadzone;
+    p.drawEllipse(rect.center(), dzR, dzR);
+
+    // Stick dot
+    const qreal r = rect.width() / 2 - 6;
+    const QPointF dot(rect.center().x() + x * r,
+                      rect.center().y() - y * r);  // y inverted
+    const qreal mag = qBound(0.0, qSqrt(qreal(x*x + y*y)), 1.0);
+    QColor dotColor = mix(dim, accent, mag);
+    if (pressed) dotColor = accent.lighter(140);
+
+    p.setPen(QPen(dotColor.darker(150), 1.5));
+    p.setBrush(dotColor);
+    p.drawEllipse(dot, 8, 8);
+
+    // Vector line center → dot when stick is moved
+    if (mag > deadzone) {
+        p.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 120), 1.5));
+        p.drawLine(rect.center(), dot);
+    }
+}
+
+void drawTrigger(QPainter& p, QRectF rect, float v,
+                 const QString& label,
+                 const QColor& bg, const QColor& border,
+                 const QColor& accent, const QColor& dim)
+{
+    p.setRenderHint(QPainter::Antialiasing, true);
+    // Track
+    p.setBrush(bg);
+    p.setPen(QPen(border, 1));
+    p.drawRoundedRect(rect, 6, 6);
+    // Fill from bottom up
+    if (v > 0.001f) {
+        QRectF fill = rect.adjusted(2, 2 + (rect.height() - 4) * (1.0f - v), -2, -2);
+        p.setBrush(QColor(accent.red(), accent.green(), accent.blue(), 200));
+        p.setPen(Qt::NoPen);
+        p.drawRoundedRect(fill, 4, 4);
+    }
+    // Label + value
+    QFont f("Segoe UI Variable Text", 9, QFont::DemiBold);
+    f.setLetterSpacing(QFont::AbsoluteSpacing, 1.0);
+    p.setFont(f);
+    p.setPen(v > 0.001f ? accent.lighter(140) : dim);
+    p.drawText(QRectF(rect.left(), rect.top() - 16, rect.width(), 14),
+               Qt::AlignHCenter, label);
+    f.setPixelSize(10);
+    f.setBold(false);
+    p.setFont(f);
+    p.setPen(v > 0.001f ? QColor(220, 230, 245) : dim);
+    p.drawText(QRectF(rect.left(), rect.bottom() + 2, rect.width(), 14),
+               Qt::AlignHCenter, QString::number(int(v * 255)));
+}
+
+void drawFaceButton(QPainter& p, QPointF center, qreal radius,
+                    const QString& letter, const QColor& accent,
+                    const QColor& dim, const QColor& border, bool pressed)
+{
+    p.setRenderHint(QPainter::Antialiasing, true);
+    QColor fill = pressed
+        ? QColor(accent.red(), accent.green(), accent.blue(), 220)
+        : QColor(20, 24, 34);
+    p.setBrush(fill);
+    p.setPen(QPen(pressed ? accent : border, pressed ? 2 : 1));
+    p.drawEllipse(center, radius, radius);
+
+    QFont f("Segoe UI Variable Display", int(radius), QFont::Bold);
+    p.setFont(f);
+    p.setPen(pressed ? Qt::white : dim);
+    p.drawText(QRectF(center.x() - radius, center.y() - radius,
+                      radius * 2, radius * 2),
+               Qt::AlignCenter, letter);
+}
+
+void drawDpad(QPainter& p, QRectF rect,
+              bool up, bool down, bool left, bool right,
+              const QColor& accent, const QColor& dim, const QColor& border)
+{
+    p.setRenderHint(QPainter::Antialiasing, true);
+    const qreal arm = rect.width() / 3;
+    // Vertical bar
+    QRectF v(rect.center().x() - arm/2, rect.top(), arm, rect.height());
+    QRectF h(rect.left(), rect.center().y() - arm/2, rect.width(), arm);
+
+    auto drawArm = [&](QRectF r, bool pressed, Qt::Orientation orient, bool first) {
+        QColor fill = pressed ? QColor(accent.red(), accent.green(), accent.blue(), 220) : QColor(20, 24, 34);
+        p.setBrush(fill);
+        p.setPen(QPen(pressed ? accent : border, pressed ? 2 : 1));
+        if (orient == Qt::Vertical) {
+            QRectF half = first
+                ? QRectF(r.left(), r.top(), r.width(), r.height()/2 - 1)
+                : QRectF(r.left(), r.center().y() + 1, r.width(), r.height()/2 - 1);
+            p.drawRoundedRect(half, 4, 4);
+        } else {
+            QRectF half = first
+                ? QRectF(r.left(), r.top(), r.width()/2 - 1, r.height())
+                : QRectF(r.center().x() + 1, r.top(), r.width()/2 - 1, r.height());
+            p.drawRoundedRect(half, 4, 4);
+        }
+    };
+    drawArm(v, up,    Qt::Vertical,   true);
+    drawArm(v, down,  Qt::Vertical,   false);
+    drawArm(h, left,  Qt::Horizontal, true);
+    drawArm(h, right, Qt::Horizontal, false);
+
+    // Center dot
+    p.setBrush(QColor(20, 24, 34));
+    p.setPen(QPen(border, 1));
+    p.drawEllipse(rect.center(), arm/3, arm/3);
+}
+
+void drawShoulderPill(QPainter& p, QRectF rect, const QString& label,
+                      bool pressed, const QColor& accent,
+                      const QColor& dim, const QColor& border)
+{
+    p.setRenderHint(QPainter::Antialiasing, true);
+    QColor fill = pressed ? QColor(accent.red(), accent.green(), accent.blue(), 220) : QColor(20, 24, 34);
+    p.setBrush(fill);
+    p.setPen(QPen(pressed ? accent : border, pressed ? 2 : 1));
+    p.drawRoundedRect(rect, rect.height()/2, rect.height()/2);
+
+    QFont f("Segoe UI Variable Text", 10, QFont::DemiBold);
+    f.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
+    p.setFont(f);
+    p.setPen(pressed ? Qt::white : dim);
+    p.drawText(rect, Qt::AlignCenter, label);
+}
+
+void drawCenterPill(QPainter& p, QRectF rect, const QString& label,
+                    bool pressed, const QColor& accent,
+                    const QColor& dim, const QColor& border)
+{
+    p.setRenderHint(QPainter::Antialiasing, true);
+    QColor fill = pressed ? QColor(accent.red(), accent.green(), accent.blue(), 220) : QColor(20, 24, 34);
+    p.setBrush(fill);
+    p.setPen(QPen(pressed ? accent : border, pressed ? 1.5 : 1));
+    p.drawRoundedRect(rect, 4, 4);
+
+    QFont f("Segoe UI Variable Text", 8, QFont::DemiBold);
+    f.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
+    p.setFont(f);
+    p.setPen(pressed ? Qt::white : dim);
+    p.drawText(rect, Qt::AlignCenter, label);
+}
+
+} // anonymous namespace
+
 // ── paintEvent ───────────────────────────────────────────────────────────────
 
 void ControllerMonitorWidget::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing, false);
+    p.setRenderHint(QPainter::Antialiasing, true);
 
     // Palette
-    const QColor bg      {14,  16,  22};
-    const QColor surface {22,  26,  36};
+    const QColor bg      {10,  13,  20};
+    const QColor surface {16,  20,  30};
     const QColor border  {38,  46,  64};
-    const QColor text    {200, 210, 230};
-    const QColor muted   {90,  100, 118};
+    const QColor borderD {28,  34,  50};
+    const QColor text    {220, 230, 245};
+    const QColor muted   {110, 122, 145};
     const QColor accent  = qApp->palette().color(QPalette::Highlight);
 
     const int W = width();
     const int H = height();
-
     p.fillRect(rect(), bg);
 
-    // Layout
-    const int hdrH  = 28;
-    const int plotH = qMax(90, H * 28 / 100);
-    const int listH = H - hdrH - plotH;
-    const int listW = W * 58 / 100;
-    const int statX = listW + 1;
-    const int statW = W - statX;
-
-    // ── Header ───────────────────────────────────────────────────────────────
+    // ── Header strip ─────────────────────────────────────────────────────────
+    const int hdrH = 36;
     p.fillRect(0, 0, W, hdrH, surface);
     p.fillRect(0, hdrH - 1, W, 1, border);
 
-    QFont mono("Cascadia Mono");
-    mono.setPixelSize(11);
-    mono.setLetterSpacing(QFont::AbsoluteSpacing, 1.4);
-    p.setFont(mono);
-    p.setPen(accent);
-    p.drawText(QRect(10, 0, 200, hdrH), Qt::AlignVCenter, "XINPUT MONITOR");
+    QFont head("Segoe UI Variable Text", 9, QFont::DemiBold);
+    head.setLetterSpacing(QFont::AbsoluteSpacing, 1.4);
+    p.setFont(head);
+    p.setPen(muted);
+    p.drawText(QRect(16, 0, 240, hdrH), Qt::AlignVCenter, "CONTROLLER MONITOR");
 
     const bool conn = m_hasState && m_state.connected;
-    const QString statusStr = !m_hasState
-        ? QStringLiteral("WAITING FOR CONTROLLER")
-        : (conn
-            ? QStringLiteral("SLOT %1  ●  CONNECTED").arg(m_state.slot)
-            : QStringLiteral("SLOT %1  ○  DISCONNECTED").arg(m_state.slot));
-    p.setPen(conn ? QColor(30, 210, 90) : muted);
-    p.drawText(QRect(0, 0, W - 10, hdrH), Qt::AlignVCenter | Qt::AlignRight, statusStr);
+    QString statusStr = !m_hasState ? QStringLiteral("WAITING")
+                       : conn        ? QStringLiteral("SLOT %1  ●  CONNECTED").arg(m_state.slot)
+                                     : QStringLiteral("SLOT %1  ○  DISCONNECTED").arg(m_state.slot);
+    p.setPen(conn ? QColor(74, 222, 128) : muted);
+    QFont stHead("Segoe UI Variable Text", 9, QFont::DemiBold);
+    stHead.setLetterSpacing(QFont::AbsoluteSpacing, 1.0);
+    p.setFont(stHead);
+    p.drawText(QRect(0, 0, W - 16, hdrH), Qt::AlignVCenter | Qt::AlignRight, statusStr);
 
-    // ── Input list ───────────────────────────────────────────────────────────
-    struct Row { const char* name; int value; int range; };  // range: 255, 32767, or 1
+    // ── Main controller diagram ──────────────────────────────────────────────
+    const int oscH    = 100;
+    const int diagY0  = hdrH + 14;
+    const int diagY1  = H - oscH - 8;
+    const int diagH   = diagY1 - diagY0;
 
-    const Row rows[] = {
-        {"LT",     m_state.leftTrigger,               255},
-        {"RT",     m_state.rightTrigger,              255},
-        {"LX",     m_state.leftThumbX,                32767},
-        {"LY",     m_state.leftThumbY,                32767},
-        {"RX",     m_state.rightThumbX,               32767},
-        {"RY",     m_state.rightThumbY,               32767},
-        {"A",      !!(m_state.buttons & ButtonA),     1},
-        {"B",      !!(m_state.buttons & ButtonB),     1},
-        {"X",      !!(m_state.buttons & ButtonX),     1},
-        {"Y",      !!(m_state.buttons & ButtonY),     1},
-        {"LB",     !!(m_state.buttons & ButtonLeftShoulder),  1},
-        {"RB",     !!(m_state.buttons & ButtonRightShoulder), 1},
-        {"UP",     !!(m_state.buttons & ButtonDpadUp),    1},
-        {"DOWN",   !!(m_state.buttons & ButtonDpadDown),  1},
-        {"LEFT",   !!(m_state.buttons & ButtonDpadLeft),  1},
-        {"RIGHT",  !!(m_state.buttons & ButtonDpadRight), 1},
-        {"START",  !!(m_state.buttons & ButtonStart),     1},
-        {"BACK",   !!(m_state.buttons & ButtonBack),      1},
-        {"GUIDE",  !!(m_state.buttons & ButtonGuide),     1},
-        {"LS",     !!(m_state.buttons & ButtonLeftThumb),  1},
-        {"RS",     !!(m_state.buttons & ButtonRightThumb), 1},
-    };
-    constexpr int kRows = (int)(sizeof(rows) / sizeof(rows[0]));
+    // Symmetric layout: two big stick wells flanking the diagram, triggers above,
+    // shoulders above triggers, dpad bottom-left, face buttons bottom-right,
+    // center pills (Back/Guide/Start) between sticks at the top middle.
 
-    const int rowH  = qMax(14, listH / kRows);
-    const int idxW  = 28;
-    const int nameW = 52;
-    const int valW  = 58;
-    const int barX  = idxW + nameW + valW + 6;
-    const int barW  = listW - barX - 8;
+    const qreal stickR = qMin(qreal(diagH) * 0.30, qreal(W) * 0.18);
+    const qreal stickD = stickR * 2;
 
-    mono.setPixelSize(10);
-    mono.setLetterSpacing(QFont::AbsoluteSpacing, 0.4);
+    // Left/right column anchors
+    const qreal leftCenterX  = W * 0.20;
+    const qreal rightCenterX = W * 0.80;
+    const qreal sticksY      = diagY0 + diagH * 0.35;
+
+    QRectF leftStick (leftCenterX  - stickR, sticksY - stickR, stickD, stickD);
+    QRectF rightStick(rightCenterX - stickR, sticksY - stickR, stickD, stickD);
+
+    // Stick coordinates (raw float -1..1)
+    float lx = m_state.leftThumbX  / 32767.f;
+    float ly = m_state.leftThumbY  / 32767.f;
+    float rx = m_state.rightThumbX / 32767.f;
+    float ry = m_state.rightThumbY / 32767.f;
+    drawStickWell(p, leftStick,  lx, ly, 0.10f, surface, borderD, accent, muted,
+                  m_state.buttons & ButtonLeftThumb);
+    drawStickWell(p, rightStick, rx, ry, 0.10f, surface, borderD, accent, muted,
+                  m_state.buttons & ButtonRightThumb);
+
+    // Stick labels under each
+    QFont lbl("Segoe UI Variable Text", 8, QFont::DemiBold);
+    lbl.setLetterSpacing(QFont::AbsoluteSpacing, 1.4);
+    p.setFont(lbl);
+    p.setPen(muted);
+    p.drawText(QRectF(leftStick.left(),  leftStick.bottom() + 6, leftStick.width(), 14),
+               Qt::AlignHCenter, "LEFT STICK");
+    p.drawText(QRectF(rightStick.left(), rightStick.bottom() + 6, rightStick.width(), 14),
+               Qt::AlignHCenter, "RIGHT STICK");
+
+    // Triggers — vertical bars on the inside of each stick
+    const qreal trigW = 22;
+    const qreal trigH = stickD - 14;
+    QRectF lt(leftStick.right() + 14, leftStick.top() + 7, trigW, trigH);
+    QRectF rt(rightStick.left() - 14 - trigW, rightStick.top() + 7, trigW, trigH);
+    drawTrigger(p, lt, m_state.leftTrigger / 255.f,  "LT", surface, borderD, accent, muted);
+    drawTrigger(p, rt, m_state.rightTrigger / 255.f, "RT", surface, borderD, accent, muted);
+
+    // Shoulders LB / RB above each trigger
+    const qreal shW = stickD * 0.55;
+    const qreal shH = 24;
+    QRectF lb(leftStick.center().x()  - shW/2, leftStick.top() - shH - 18, shW, shH);
+    QRectF rb(rightStick.center().x() - shW/2, rightStick.top() - shH - 18, shW, shH);
+    drawShoulderPill(p, lb, "LB", m_state.buttons & ButtonLeftShoulder,  accent, muted, border);
+    drawShoulderPill(p, rb, "RB", m_state.buttons & ButtonRightShoulder, accent, muted, border);
+
+    // D-pad — under-left
+    const qreal dpadSize = stickD * 0.70;
+    QRectF dpad(leftStick.center().x()  - dpadSize/2,
+                leftStick.bottom() + 28,
+                dpadSize, dpadSize);
+    drawDpad(p, dpad,
+             m_state.buttons & ButtonDpadUp,
+             m_state.buttons & ButtonDpadDown,
+             m_state.buttons & ButtonDpadLeft,
+             m_state.buttons & ButtonDpadRight,
+             accent, muted, border);
+
+    // Face buttons (A/B/X/Y) — under-right, in diamond layout
+    const qreal faceR = stickR * 0.34;
+    const qreal faceCx = rightStick.center().x();
+    const qreal faceCy = rightStick.bottom() + 28 + dpadSize / 2;
+    const qreal faceSpread = faceR * 2.4;
+    drawFaceButton(p, QPointF(faceCx, faceCy - faceSpread), faceR, "Y",
+                   QColor(255, 220, 0), muted, border, m_state.buttons & ButtonY);
+    drawFaceButton(p, QPointF(faceCx + faceSpread, faceCy), faceR, "B",
+                   QColor(220, 60, 60), muted, border, m_state.buttons & ButtonB);
+    drawFaceButton(p, QPointF(faceCx, faceCy + faceSpread), faceR, "A",
+                   QColor(50, 200, 80), muted, border, m_state.buttons & ButtonA);
+    drawFaceButton(p, QPointF(faceCx - faceSpread, faceCy), faceR, "X",
+                   QColor(50, 130, 255), muted, border, m_state.buttons & ButtonX);
+
+    // Center pills: BACK | GUIDE | START
+    const qreal pillW = 56, pillH = 22, pillSpacing = 8;
+    const qreal centerX = W * 0.50;
+    const qreal pillsY  = sticksY - pillH / 2;
+    const qreal pillsLeft = centerX - (pillW * 3 + pillSpacing * 2) / 2;
+    drawCenterPill(p, QRectF(pillsLeft,                              pillsY, pillW, pillH),
+                   "BACK",  m_state.buttons & ButtonBack,  accent, muted, border);
+    drawCenterPill(p, QRectF(pillsLeft + pillW + pillSpacing,        pillsY, pillW, pillH),
+                   "GUIDE", m_state.buttons & ButtonGuide, accent, muted, border);
+    drawCenterPill(p, QRectF(pillsLeft + (pillW + pillSpacing) * 2,  pillsY, pillW, pillH),
+                   "START", m_state.buttons & ButtonStart, accent, muted, border);
+
+    // Live coordinate readout under center
+    QFont mono("Cascadia Mono", 9);
     p.setFont(mono);
+    p.setPen(muted);
+    const QString coords = QStringLiteral("LX %1  LY %2     RX %3  RY %4")
+        .arg(m_state.leftThumbX,  6).arg(m_state.leftThumbY, 6)
+        .arg(m_state.rightThumbX, 6).arg(m_state.rightThumbY, 6);
+    p.drawText(QRectF(0, pillsY + pillH + 18, W, 14), Qt::AlignHCenter, coords);
 
-    for (int i = 0; i < kRows; ++i) {
-        const Row& r   = rows[i];
-        const int  y   = hdrH + i * rowH;
-        const bool hot = r.value != 0;
-
-        // Row background
-        if (hot)
-            p.fillRect(0, y, listW, rowH,
-                       QColor(accent.red(), accent.green(), accent.blue(), 28));
-        else if (i & 1)
-            p.fillRect(0, y, listW, rowH, QColor(18, 22, 30));
-
-        // Index
-        p.setPen(muted);
-        p.drawText(QRect(4, y, idxW - 4, rowH), Qt::AlignVCenter | Qt::AlignRight,
-                   QString::number(i));
-
-        // Name
-        p.setPen(hot ? text : muted);
-        p.drawText(QRect(idxW + 4, y, nameW - 4, rowH), Qt::AlignVCenter, r.name);
-
-        // Value
-        const QString valStr = (r.range == 1)
-            ? (r.value ? "+1" : "+0")
-            : ((r.value >= 0 ? "+" : "") + QString::number(r.value));
-        p.setPen(hot ? accent : muted);
-        p.drawText(QRect(idxW + nameW, y, valW, rowH),
-                   Qt::AlignVCenter | Qt::AlignRight, valStr);
-
-        // Bar track
-        if (barW > 10) {
-            const int bcy = y + rowH / 2 - 2;
-            p.fillRect(barX, bcy, barW, 4, QColor(28, 34, 48));
-
-            if (hot) {
-                int bx = barX, bw = 0;
-                if (r.range == 255) {
-                    bw = int(barW * r.value / 255.0f);
-                    bx = barX;
-                } else if (r.range == 32767) {
-                    const float n = r.value / 32767.0f;
-                    if (n >= 0) { bx = barX + barW/2; bw = int(barW/2 * n); }
-                    else        { bw = int(barW/2 * (-n)); bx = barX + barW/2 - bw; }
-                } else {
-                    bx = barX; bw = barW;
-                }
-                p.fillRect(bx, bcy, bw, 4,
-                           QColor(accent.red(), accent.green(), accent.blue(), 190));
-            }
-        }
-
-        // Row divider
-        p.fillRect(0, y + rowH - 1, listW, 1, border);
-    }
-
-    // Column divider
-    p.fillRect(listW, hdrH, 1, listH + plotH, border);
-
-    // ── Status / button grid panel ────────────────────────────────────────────
-    {
-        const int sx = statX + 10;
-        const int sw = statW - 14;
-        int sy = hdrH + 12;
-        const int lh = 17;
-
-        mono.setPixelSize(10);
-        mono.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
-        p.setFont(mono);
-
-        auto statRow = [&](const QString& label, const QString& val, const QColor& vc) {
-            p.setPen(muted);
-            p.drawText(QRect(sx, sy, sw / 2, lh), Qt::AlignVCenter, label);
-            p.setPen(vc);
-            p.drawText(QRect(sx + sw / 2, sy, sw / 2, lh),
-                       Qt::AlignVCenter | Qt::AlignRight, val);
-            sy += lh;
-        };
-
-        statRow("SLOT",
-                m_hasState ? QString::number(m_state.slot) : "—", text);
-        statRow("STATUS",
-                !m_hasState ? "WAITING" : (conn ? "CONNECTED" : "DISCONNECTED"),
-                conn ? QColor(30,210,90) : QColor(210,70,70));
-
-        sy += 6;
-        p.fillRect(sx, sy, sw, 1, border);
-        sy += 8;
-
-        // Trigger bars
-        auto trigBar = [&](const QString& lbl, int val) {
-            p.setPen(muted);
-            p.drawText(QRect(sx, sy, 24, lh), Qt::AlignVCenter, lbl);
-            const int bx = sx + 26, bw = sw - 46;
-            p.fillRect(bx, sy + lh/2 - 3, bw, 6, QColor(26, 32, 46));
-            if (val > 0)
-                p.fillRect(bx, sy + lh/2 - 3, int(bw * val / 255.0f), 6,
-                           QColor(accent.red(), accent.green(), accent.blue(), 200));
-            p.setPen(val ? accent : muted);
-            p.drawText(QRect(sx + sw - 20, sy, 20, lh), Qt::AlignVCenter | Qt::AlignRight,
-                       QString::number(val));
-            sy += lh;
-        };
-        trigBar("LT", m_state.leftTrigger);
-        trigBar("RT", m_state.rightTrigger);
-
-        sy += 6;
-        p.fillRect(sx, sy, sw, 1, border);
-        sy += 8;
-
-        // Button grid (4 columns)
-        struct Btn { const char* name; bool pressed; };
-        const Btn btns[] = {
-            {"A",     !!(m_state.buttons & ButtonA)},
-            {"B",     !!(m_state.buttons & ButtonB)},
-            {"X",     !!(m_state.buttons & ButtonX)},
-            {"Y",     !!(m_state.buttons & ButtonY)},
-            {"LB",    !!(m_state.buttons & ButtonLeftShoulder)},
-            {"RB",    !!(m_state.buttons & ButtonRightShoulder)},
-            {"UP",    !!(m_state.buttons & ButtonDpadUp)},
-            {"DOWN",  !!(m_state.buttons & ButtonDpadDown)},
-            {"LEFT",  !!(m_state.buttons & ButtonDpadLeft)},
-            {"RIGHT", !!(m_state.buttons & ButtonDpadRight)},
-            {"START", !!(m_state.buttons & ButtonStart)},
-            {"BACK",  !!(m_state.buttons & ButtonBack)},
-            {"GUIDE", !!(m_state.buttons & ButtonGuide)},
-            {"LS",    !!(m_state.buttons & ButtonLeftThumb)},
-            {"RS",    !!(m_state.buttons & ButtonRightThumb)},
-        };
-        constexpr int kBtns = (int)(sizeof(btns) / sizeof(btns[0]));
-        const int cols   = 3;
-        const int cellW  = sw / cols;
-        const int cellH  = 20;
-
-        for (int i = 0; i < kBtns; ++i) {
-            const int bx = sx + (i % cols) * cellW;
-            const int by = sy + (i / cols) * cellH;
-            const bool pr = btns[i].pressed;
-            if (pr)
-                p.fillRect(bx, by, cellW - 2, cellH - 2,
-                           QColor(accent.red(), accent.green(), accent.blue(), 55));
-            p.setPen(pr ? accent : muted);
-            p.drawText(QRect(bx, by, cellW - 2, cellH), Qt::AlignCenter, btns[i].name);
-        }
-    }
-
-    // ── Oscilloscope ─────────────────────────────────────────────────────────
-    const int plotY = H - plotH;
-    p.fillRect(0, plotY, W, plotH, QColor(10, 12, 18));
+    // ── Oscilloscope at the bottom ───────────────────────────────────────────
+    const int plotY = H - oscH;
+    p.fillRect(0, plotY, W, oscH, QColor(7, 9, 14));
     p.fillRect(0, plotY, W, 1, border);
 
     // Grid
-    p.setPen(QPen(QColor(28, 34, 50), 1, Qt::DotLine));
+    p.setPen(QPen(QColor(22, 28, 42), 1, Qt::DotLine));
     for (int i = 1; i < 4; ++i)
-        p.drawLine(0, plotY + plotH * i / 4, W, plotY + plotH * i / 4);
-    p.setPen(QPen(QColor(42, 50, 70), 1));
-    p.drawLine(0, plotY + plotH / 2, W, plotY + plotH / 2);
+        p.drawLine(0, plotY + oscH * i / 4, W, plotY + oscH * i / 4);
+    p.setPen(QPen(QColor(38, 48, 70), 1));
+    p.drawLine(0, plotY + oscH / 2, W, plotY + oscH / 2);
+
+    // Eyebrow label inside the plot
+    QFont eyebrow("Segoe UI Variable Text", 8, QFont::DemiBold);
+    eyebrow.setLetterSpacing(QFont::AbsoluteSpacing, 1.4);
+    p.setFont(eyebrow);
+    p.setPen(QColor(70, 80, 100));
+    p.drawText(QRect(12, plotY + 6, 120, 12), Qt::AlignLeft, "STICK / TRIGGER TRACE");
 
     // Y labels
-    mono.setPixelSize(8);
-    mono.setLetterSpacing(QFont::AbsoluteSpacing, 0.0);
-    p.setFont(mono);
-    p.setPen(muted);
-    p.drawText(QRect(2, plotY + 1, 32, 11), Qt::AlignLeft, "+100");
-    p.drawText(QRect(2, plotY + plotH/2 - 6, 18, 11), Qt::AlignLeft, "0");
-    p.drawText(QRect(2, plotY + plotH - 12, 32, 11), Qt::AlignLeft, "-100");
+    QFont yLbl("Cascadia Mono", 8);
+    p.setFont(yLbl);
+    p.setPen(QColor(80, 90, 110));
+    p.drawText(QRect(2, plotY + 1, 30, 11), Qt::AlignLeft, "+1.0");
+    p.drawText(QRect(2, plotY + oscH/2 - 6, 18, 11), Qt::AlignLeft, "0");
+    p.drawText(QRect(2, plotY + oscH - 12, 30, 11), Qt::AlignLeft, "-1.0");
 
-    // Traces
     if (!m_history.empty()) {
-        struct Trace { float Sample::*field; float scale; QColor color; };
+        struct Trace { float Sample::*field; QColor color; const char* name; };
         const Trace traces[] = {
-            {&Sample::lx, 1.0f, QColor(50,  130, 255)},   // LX blue
-            {&Sample::ly, 1.0f, QColor(0,   200, 220)},   // LY cyan
-            {&Sample::rx, 1.0f, QColor(255, 140,  30)},   // RX orange
-            {&Sample::ry, 1.0f, QColor(255, 220,   0)},   // RY yellow
-            {&Sample::lt, 0.5f, QColor(220,  50,  50)},   // LT red
-            {&Sample::rt, 0.5f, QColor(50,  200,  80)},   // RT green
+            {&Sample::lx, QColor(50,  130, 255), "LX"},
+            {&Sample::ly, QColor(80,  200, 220), "LY"},
+            {&Sample::rx, QColor(255, 140,  30), "RX"},
+            {&Sample::ry, QColor(255, 220,   0), "RY"},
+            {&Sample::lt, QColor(220,  70,  70), "LT"},
+            {&Sample::rt, QColor(74,  222, 128), "RT"},
         };
 
-        p.setRenderHint(QPainter::Antialiasing, true);
         const int n = (int)m_history.size();
-        const qreal halfH = plotH / 2.0 - 4.0;
+        const qreal halfH = oscH / 2.0 - 6.0;
 
         for (const Trace& tr : traces) {
             QPolygonF poly;
             poly.reserve(n);
             for (int i = 0; i < n; ++i) {
-                const float v = m_history[i].*tr.field * tr.scale;
+                const float v = m_history[i].*tr.field;
                 poly << QPointF(qreal(W) * i / kHistLen,
-                                plotY + plotH / 2.0 - v * halfH);
+                                plotY + oscH / 2.0 - v * halfH);
             }
             p.setPen(QPen(tr.color, 1.5));
             p.drawPolyline(poly);
         }
 
-        // Legend
-        const char* names[] = {"LX","LY","RX","RY","LT","RT"};
-        mono.setPixelSize(8);
-        p.setFont(mono);
-        int lx = W - 38 * 6 - 4;
+        // Tight legend top-right
+        QFont leg("Segoe UI Variable Text", 8, QFont::DemiBold);
+        p.setFont(leg);
+        int lx2 = W - 30 * 6 - 12;
         for (int i = 0; i < 6; ++i) {
-            p.setPen(QPen(traces[i].color, 2));
-            p.drawLine(lx, plotY + 8, lx + 12, plotY + 8);
+            p.fillRect(lx2, plotY + 7, 8, 8, traces[i].color);
             p.setPen(traces[i].color);
-            p.drawText(lx + 14, plotY + 12, names[i]);
-            lx += 38;
+            p.drawText(lx2 + 12, plotY + 14, traces[i].name);
+            lx2 += 30;
         }
     }
 }

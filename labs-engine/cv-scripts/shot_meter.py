@@ -117,16 +117,24 @@ def find_window(keywords=None):
             for k in _FALLBACK_KEYWORDS:
                 if k not in search: search.append(k)
 
-        # try each keyword in priority order, return the first hit per keyword
-        for kw in search:
-            hits = []
-            def _cb(hwnd, _kw=kw):
-                t = win32gui.GetWindowText(hwnd)
-                if _kw in t and win32gui.IsWindowVisible(hwnd):
+        # try each keyword in priority order. Build callbacks via factory so the
+        # captured kw isn't shadowed by EnumWindows' (hwnd, lparam) signature.
+        def _make_cb(target_kw, hits):
+            def _cb(hwnd, _lparam):
+                try:
+                    t = win32gui.GetWindowText(hwnd) or ""
+                except Exception:
+                    return True
+                if target_kw in t and win32gui.IsWindowVisible(hwnd):
                     r = win32gui.GetWindowRect(hwnd)
                     if (r[2] - r[0]) > 200 and (r[3] - r[1]) > 200:
                         hits.append((t, r))
-            win32gui.EnumWindows(_cb, None)
+                return True
+            return _cb
+
+        for kw in search:
+            hits = []
+            win32gui.EnumWindows(_make_cb(kw, hits), None)
             if hits:
                 title, (x1, y1, x2, y2) = hits[0]
                 print(f"[CAPTURE] Window: '{title}'  {x2-x1}x{y2-y1}  (kw='{kw}')")
