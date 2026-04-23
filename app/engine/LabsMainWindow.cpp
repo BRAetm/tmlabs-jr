@@ -428,11 +428,13 @@ QWidget* LabsMainWindow::buildTopBar()
     titleColumn->addWidget(wordmark);
     titleColumn->addWidget(version);
 
-    // Engine state pill — middle of the bar, eye-catching, single source of truth.
-    m_statePill = new QLabel(QStringLiteral("READY"), bar);
+    // Engine state pill — only visible when capture or script is running.
+    // Shows "▶ SecretK.py" while running so you can tell which script is live.
+    m_statePill = new QLabel(QString(), bar);
     m_statePill->setObjectName(QStringLiteral("statePill"));
-    m_statePill->setProperty("state", "ready");
+    m_statePill->setProperty("state", "running");
     m_statePill->setAlignment(Qt::AlignCenter);
+    m_statePill->setVisible(false);
 
     auto* modeLabel = new QLabel(QStringLiteral("mode"), bar);
     modeLabel->setObjectName(QStringLiteral("modeLabel"));
@@ -1021,18 +1023,26 @@ void LabsMainWindow::updateActions()
         m_scriptStopBtn->setVisible(scriptRunning);
     }
 
-    // State pill — single source of truth for "is the engine doing anything".
+    // State pill — only visible when something is running. Shows the script
+    // name when the script is up, otherwise just "STREAMING".
     if (m_statePill) {
-        const char* state;
-        QString text;
-        if (running && scriptRunning) { state = "running"; text = "RUNNING"; }
-        else if (running)             { state = "running"; text = "STREAMING"; }
-        else if (scriptRunning)       { state = "running"; text = "SCRIPT"; }
-        else                          { state = "ready";   text = "READY"; }
-        m_statePill->setText(text);
-        m_statePill->setProperty("state", state);
-        m_statePill->style()->unpolish(m_statePill);
-        m_statePill->style()->polish(m_statePill);
+        const bool anyRunning = running || scriptRunning;
+        m_statePill->setVisible(anyRunning);
+        if (anyRunning) {
+            QString text;
+            if (scriptRunning && m_scriptCombo) {
+                const QString picked = m_scriptCombo->currentData().toString();
+                const QString name = picked.isEmpty()
+                    ? QStringLiteral("script") : QFileInfo(picked).fileName();
+                text = QStringLiteral("▶  %1").arg(name);
+            } else {
+                text = QStringLiteral("▶  STREAMING");
+            }
+            m_statePill->setText(text);
+            m_statePill->setProperty("state", "running");
+            m_statePill->style()->unpolish(m_statePill);
+            m_statePill->style()->polish(m_statePill);
+        }
     }
 }
 
