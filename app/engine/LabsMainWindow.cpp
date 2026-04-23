@@ -421,12 +421,10 @@ QWidget* LabsMainWindow::buildTopBar()
     connect(m_perfLiteBtn, &QPushButton::clicked, this, [this]() {
         m_perfLiteBtn->setChecked(true); m_perfProBtn->setChecked(false);
         if (m_settings) { m_settings->setValue(QStringLiteral("cv/perfMode"), "low"); m_settings->sync(); }
-        appendLog(QStringLiteral("perf: LOW END  →  stream 30fps · 5 Mbps  ·  script 60fps mss"));
     });
     connect(m_perfProBtn, &QPushButton::clicked, this, [this]() {
         m_perfProBtn->setChecked(true); m_perfLiteBtn->setChecked(false);
         if (m_settings) { m_settings->setValue(QStringLiteral("cv/perfMode"), "high"); m_settings->sync(); }
-        appendLog(QStringLiteral("perf: HIGH END  →  stream 60fps · 15 Mbps  ·  script 240fps BetterCam"));
     });
 
     connect(m_btnPick,  &QPushButton::clicked, this, &LabsMainWindow::onPickWindow);
@@ -774,17 +772,9 @@ void LabsMainWindow::onStart()
     // separately via --target-fps when the script launches.
     if (m_settings && m_perfLiteBtn) {
         const bool low = m_perfLiteBtn->isChecked();
-        if (low) {
-            m_settings->setValue(QStringLiteral("ps/fps"),     30);
-            m_settings->setValue(QStringLiteral("ps/bitrate"), 5000);
-            m_settings->setValue(QStringLiteral("ps/codec"),   0);   // H.264 — cheap decode
-            appendLog(QStringLiteral("engine: LOW END   — stream 30fps · 5 Mbps · H.264"));
-        } else {
-            m_settings->setValue(QStringLiteral("ps/fps"),     60);
-            m_settings->setValue(QStringLiteral("ps/bitrate"), 15000);
-            m_settings->setValue(QStringLiteral("ps/codec"),   0);
-            appendLog(QStringLiteral("engine: HIGH END  — stream 60fps · 15 Mbps · H.264 (PS5 hardware cap)"));
-        }
+        m_settings->setValue(QStringLiteral("ps/fps"),     low ? 30 : 60);
+        m_settings->setValue(QStringLiteral("ps/bitrate"), low ? 5000 : 15000);
+        m_settings->setValue(QStringLiteral("ps/codec"),   0);  // H.264
         m_settings->sync();
     }
 
