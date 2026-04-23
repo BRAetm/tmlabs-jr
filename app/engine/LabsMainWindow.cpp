@@ -404,29 +404,29 @@ QWidget* LabsMainWindow::buildTopBar()
     // Performance-tier segmented toggle. Persisted as cv/perfMode and applied
     // to BOTH the streaming session (ps/fps + ps/bitrate + ps/codec) and the
     // python script (--low-end).
-    m_perfLiteBtn = new QPushButton(QStringLiteral("Lite  CPU"), bar);
-    m_perfProBtn  = new QPushButton(QStringLiteral("Pro  GPU"),  bar);
+    m_perfLiteBtn = new QPushButton(QStringLiteral("Low End"),  bar);
+    m_perfProBtn  = new QPushButton(QStringLiteral("High End"), bar);
     m_perfLiteBtn->setCheckable(true); m_perfProBtn->setCheckable(true);
     m_perfLiteBtn->setProperty("segLeft",  true);
     m_perfProBtn ->setProperty("segRight", true);
     m_perfLiteBtn->setMinimumHeight(34); m_perfProBtn->setMinimumHeight(34);
     {
         const QString saved = m_settings ? m_settings->value(
-            QStringLiteral("cv/perfMode"), QStringLiteral("pro")).toString()
-            : QStringLiteral("pro");
-        const bool lite = (saved.toLower() == QStringLiteral("lite"));
-        m_perfLiteBtn->setChecked(lite);
-        m_perfProBtn ->setChecked(!lite);
+            QStringLiteral("cv/perfMode"), QStringLiteral("high")).toString()
+            : QStringLiteral("high");
+        const bool low = (saved.toLower() == QStringLiteral("low") || saved.toLower() == QStringLiteral("lite"));
+        m_perfLiteBtn->setChecked(low);
+        m_perfProBtn ->setChecked(!low);
     }
     connect(m_perfLiteBtn, &QPushButton::clicked, this, [this]() {
         m_perfLiteBtn->setChecked(true); m_perfProBtn->setChecked(false);
-        if (m_settings) { m_settings->setValue(QStringLiteral("cv/perfMode"), "lite"); m_settings->sync(); }
-        appendLog(QStringLiteral("perf: Lite (CPU)  → ps/fps=30 ps/bitrate=5Mbps  script: --low-end"));
+        if (m_settings) { m_settings->setValue(QStringLiteral("cv/perfMode"), "low"); m_settings->sync(); }
+        appendLog(QStringLiteral("perf: LOW END  →  stream 30fps · 5 Mbps  ·  script 60fps mss"));
     });
     connect(m_perfProBtn, &QPushButton::clicked, this, [this]() {
         m_perfProBtn->setChecked(true); m_perfLiteBtn->setChecked(false);
-        if (m_settings) { m_settings->setValue(QStringLiteral("cv/perfMode"), "pro"); m_settings->sync(); }
-        appendLog(QStringLiteral("perf: Pro (GPU)  → ps/fps=60 ps/bitrate=15Mbps script: full"));
+        if (m_settings) { m_settings->setValue(QStringLiteral("cv/perfMode"), "high"); m_settings->sync(); }
+        appendLog(QStringLiteral("perf: HIGH END  →  stream 60fps · 15 Mbps  ·  script 240fps BetterCam"));
     });
 
     connect(m_btnPick,  &QPushButton::clicked, this, &LabsMainWindow::onPickWindow);
@@ -769,21 +769,21 @@ void LabsMainWindow::onStart()
 
     // Apply perf-tier settings to the streaming pipeline BEFORE starting the source.
     // The PS Remote Play plugin reads ps/fps, ps/bitrate, ps/codec at start() time.
+    // PS5 stream caps at 60fps — that's a console hardware limit, not ours. The
+    // BetterCam side that the script captures from CAN do 240fps; that's wired
+    // separately via --target-fps when the script launches.
     if (m_settings && m_perfLiteBtn) {
-        const bool lite = m_perfLiteBtn->isChecked();
-        if (lite) {
-            // Low-end: half the framerate, third the bitrate, H.264 (cheaper to decode).
-            // Targets 30fps stable on integrated GPUs / weak CPUs.
+        const bool low = m_perfLiteBtn->isChecked();
+        if (low) {
             m_settings->setValue(QStringLiteral("ps/fps"),     30);
             m_settings->setValue(QStringLiteral("ps/bitrate"), 5000);
-            m_settings->setValue(QStringLiteral("ps/codec"),   0);   // 0 = H.264
-            appendLog(QStringLiteral("engine: LITE (CPU)  — 30fps · 5 Mbps · H.264"));
+            m_settings->setValue(QStringLiteral("ps/codec"),   0);   // H.264 — cheap decode
+            appendLog(QStringLiteral("engine: LOW END   — stream 30fps · 5 Mbps · H.264"));
         } else {
-            // High-end: full framerate, full bitrate, H.264 (DualSense quality).
             m_settings->setValue(QStringLiteral("ps/fps"),     60);
             m_settings->setValue(QStringLiteral("ps/bitrate"), 15000);
             m_settings->setValue(QStringLiteral("ps/codec"),   0);
-            appendLog(QStringLiteral("engine: PRO (GPU)  — 60fps · 15 Mbps · H.264"));
+            appendLog(QStringLiteral("engine: HIGH END  — stream 60fps · 15 Mbps · H.264 (PS5 hardware cap)"));
         }
         m_settings->sync();
     }
@@ -866,11 +866,16 @@ void LabsMainWindow::onRunScript()
     const QFileInfo fi(path);
     m_scriptProc->setWorkingDirectory(fi.absolutePath());
 
-    // Build the script arg list. Pass --low-end when the rail toggle is set
-    // to Lite. Future: pass --threshold etc from settings UI.
+    // Build the script arg list. The perf toggle drives both:
+    //   Low End  → --low-end  (60fps mss, every-2 frame, 250Hz passthrough)
+    //   High End → --target-fps 240  (BetterCam at its real cap)
     QStringList args { path };
-    const bool lite = m_perfLiteBtn && m_perfLiteBtn->isChecked();
-    if (lite) args << QStringLiteral("--low-end");
+    const bool low = m_perfLiteBtn && m_perfLiteBtn->isChecked();
+    if (low) {
+        args << QStringLiteral("--low-end");
+    } else {
+        args << QStringLiteral("--target-fps") << QStringLiteral("240");
+    }
 
     m_scriptProc->start(QStringLiteral("python"), args);
 
