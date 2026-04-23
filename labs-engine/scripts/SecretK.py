@@ -12,18 +12,18 @@ USERDATA = Path(os.environ.get("LABS_SETTINGS_ROOT", ROOT / "userdata"))
 SETTINGS = USERDATA / "settings" / "nba2k_settings.current"
 BANNER   = USERDATA / "assets" / "tm_labs_banner.png"
 
-# ── palette ───────────────────────────────────────────────────────────────────
-BG      = "#0C0E14"
-SURFACE = "#12151F"
-SURF2   = "#181C29"
-BORDER  = "#1F2537"
-BORD_HI = "#2C3654"
-TEXT    = "#E8EDF5"
-DIM     = "#6B7A9B"
-FAINT   = "#343D55"
-ACCENT  = "#1FA0FF"
-ACCDIM  = "#0D3A6B"
-OK      = "#22C55E"
+# ── palette — deep neutrals + single confident accent ────────────────────────
+BG      = "#06080F"   # near-black canvas
+SURFACE = "#0C0F18"   # primary panels
+SURF2   = "#11151F"   # nested panels / inputs
+BORDER  = "#1A2030"   # subtle hair-line
+BORD_HI = "#2A3450"   # focus / hover border
+TEXT    = "#F0F4FA"   # primary text
+DIM     = "#7E8AA6"   # secondary text
+FAINT   = "#3A4360"   # disabled / placeholder
+ACCENT  = "#3B82F6"   # confident electric blue (one strong accent)
+ACCDIM  = "#1E3A8A"
+OK      = "#34D399"
 DANGER  = "#EF4444"
 WARN    = "#F59E0B"
 
@@ -175,6 +175,25 @@ QPushButton[danger="true"] {{
 }}
 QPushButton[danger="true"]:hover    {{ background: #F87171; }}
 QPushButton[danger="true"]:pressed  {{ background: #DC2626; }}
+
+/* License chip — top-bar pill that flips color on unlock */
+QLabel#licenseChip {{
+    background: {SURF2};
+    border: 1px solid {BORDER};
+    border-radius: 14px;
+    padding: 4px 14px;
+    color: {DIM};
+}}
+QLabel#licenseChip[state="locked"] {{
+    background: {SURF2};
+    border: 1px solid {BORDER};
+    color: {DIM};
+}}
+QLabel#licenseChip[state="active"] {{
+    background: rgba(52,211,153,0.10);
+    border: 1px solid rgba(52,211,153,0.45);
+    color: {OK};
+}}
 """
 
 
@@ -338,66 +357,89 @@ class WinBtn(QtWidgets.QAbstractButton):
 
 
 class TabBtn(QtWidgets.QAbstractButton):
+    """Pill-style tab — solid block when active, ghost when not."""
     def __init__(self, text: str, parent=None):
         super().__init__(parent)
         self.setText(text)
         self.setCheckable(True)
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.setFont(label_font(9))
-        self.setFixedHeight(36)
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
+        f.setPointSize(10)
+        f.setWeight(QtGui.QFont.Weight(600))
+        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 0.4)
+        self.setFont(f)
+        self.setFixedHeight(34)
 
     def sizeHint(self):
         fm = QtGui.QFontMetrics(self.font())
-        return QtCore.QSize(fm.horizontalAdvance(self.text()) + 32, 36)
+        return QtCore.QSize(fm.horizontalAdvance(self.text()) + 32, 34)
 
     def paintEvent(self, _):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        r = self.rect()
+        r = self.rect().adjusted(2, 4, -2, -4)
         active = self.isChecked()
         hover  = self.underMouse() and not active
-        color  = QtGui.QColor(TEXT if active else (DIM if not hover else "#A0B4D0"))
-        p.setFont(self.font())
-        p.setPen(color)
-        p.drawText(r, QtCore.Qt.AlignmentFlag.AlignCenter, self.text())
+
+        # Background
         if active:
-            p.fillRect(QtCore.QRect(0, r.height()-2, r.width(), 2), QtGui.QColor(ACCENT))
+            p.setBrush(QtGui.QColor(ACCENT))
+            p.setPen(QtCore.Qt.PenStyle.NoPen)
+            p.drawRoundedRect(r, r.height()/2, r.height()/2)
+            text_color = QtGui.QColor("#001023")
+        elif hover:
+            p.setBrush(QtGui.QColor(SURF2))
+            p.setPen(QtCore.Qt.PenStyle.NoPen)
+            p.drawRoundedRect(r, r.height()/2, r.height()/2)
+            text_color = QtGui.QColor(TEXT)
+        else:
+            text_color = QtGui.QColor(DIM)
+
+        p.setFont(self.font())
+        p.setPen(text_color)
+        p.drawText(r, QtCore.Qt.AlignmentFlag.AlignCenter, self.text())
 
     def enterEvent(self, e): self.update(); super().enterEvent(e)
     def leaveEvent(self, e): self.update(); super().leaveEvent(e)
 
 
 class Card(QtWidgets.QFrame):
-    """Clean bordered surface card."""
+    """Subtle elevated surface — no visible border, depth from background only."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Card")
         self.setStyleSheet(f"""
             QFrame#Card {{
                 background: {SURFACE};
-                border: 1px solid {BORDER};
-                border-radius: 6px;
+                border: none;
+                border-radius: 10px;
             }}
         """)
 
 
 class SectionLabel(QtWidgets.QWidget):
-    """Left-bar section label."""
+    """Confident section header — caps eyebrow + thin underline."""
     def __init__(self, text: str, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(22)
+        self.setFixedHeight(24)
         self._text = text.upper()
 
     def paintEvent(self, _):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        # left accent bar
-        p.fillRect(0, 4, 2, 14, QtGui.QColor(ACCENT))
-        p.setFont(label_font(8))
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+        f.setPointSize(8); f.setWeight(QtGui.QFont.Weight(700))
+        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 2.0)
+        p.setFont(f)
         p.setPen(QtGui.QColor(DIM))
-        p.drawText(QtCore.QRect(10, 0, self.width()-10, self.height()),
+        fm = QtGui.QFontMetrics(f)
+        text_w = fm.horizontalAdvance(self._text)
+        p.drawText(QtCore.QRect(0, 0, text_w + 4, self.height()),
                    QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
                    self._text)
+        # tiny accent dash to the right of the label
+        y = self.height() // 2
+        p.fillRect(text_w + 12, y - 1, 24, 2, QtGui.QColor(ACCENT))
 
 
 class SliderRow(QtWidgets.QWidget):
@@ -475,23 +517,30 @@ class ToggleRow(QtWidgets.QWidget):
 
 
 class StatBox(QtWidgets.QWidget):
+    """Big jersey-number stat. Dim caps label up top, huge bold number below."""
     def __init__(self, label: str, value: str = "—"):
         super().__init__()
         self.setStyleSheet(f"""
             background: {SURF2};
-            border: 1px solid {BORDER};
-            border-radius: 4px;
+            border: none;
+            border-radius: 10px;
         """)
         v = QtWidgets.QVBoxLayout(self)
-        v.setContentsMargins(12, 10, 12, 10); v.setSpacing(2)
+        v.setContentsMargins(20, 16, 20, 18); v.setSpacing(6)
 
         self._lbl = QtWidgets.QLabel(label.upper())
-        self._lbl.setFont(label_font(7))
+        f1 = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
+        f1.setPointSize(8); f1.setWeight(QtGui.QFont.Weight(700))
+        f1.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 2.0)
+        self._lbl.setFont(f1)
         self._lbl.setStyleSheet(f"background: transparent; color: {DIM}; border: none;")
         v.addWidget(self._lbl)
 
         self._val = QtWidgets.QLabel(value)
-        self._val.setFont(mono_font(18, 700))
+        f2 = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+        f2.setPointSize(28); f2.setWeight(QtGui.QFont.Weight(800))
+        f2.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, -0.8)
+        self._val.setFont(f2)
         self._val.setStyleSheet(f"background: transparent; color: {TEXT}; border: none;")
         v.addWidget(self._val)
 
@@ -579,44 +628,35 @@ class MainWindow(QtWidgets.QMainWindow):
     # ── top bar ───────────────────────────────────────────────────────────────
     def _build_topbar(self) -> QtWidgets.QWidget:
         bar = QtWidgets.QWidget()
-        bar.setFixedHeight(44)
+        bar.setFixedHeight(56)
         bar.setStyleSheet(f"background: {SURFACE}; border-bottom: 1px solid {BORDER};")
         h = QtWidgets.QHBoxLayout(bar)
-        h.setContentsMargins(20, 0, 120, 0); h.setSpacing(16)
+        h.setContentsMargins(28, 0, 120, 0); h.setSpacing(14)
 
-        id_lbl = QtWidgets.QLabel("DISCORD ID")
-        id_lbl.setFont(label_font(8))
-        id_lbl.setStyleSheet(f"color: {DIM};")
-        h.addWidget(id_lbl)
-
+        # Left: Discord ID input — labeled inline, no eyebrow
         self._id_field = QtWidgets.QLineEdit()
-        self._id_field.setPlaceholderText("Enter your Discord ID")
+        self._id_field.setPlaceholderText("Discord ID")
         self._id_field.setText(str(self._data.get("discord_id", "")))
-        self._id_field.setFixedHeight(28)
-        self._id_field.setMinimumWidth(200)
+        self._id_field.setFixedHeight(34)
+        self._id_field.setMinimumWidth(220)
         self._id_field.setMaximumWidth(280)
         self._id_field.textEdited.connect(lambda v: (self._set("discord_id", v), self._apply_lock()))
         h.addWidget(self._id_field)
 
         h.addStretch(1)
 
-        # key block — "KEY" label stacked above the value
-        key_block = QtWidgets.QWidget()
-        key_block.setStyleSheet("background: transparent;")
-        kv = QtWidgets.QVBoxLayout(key_block)
-        kv.setContentsMargins(0, 4, 0, 4); kv.setSpacing(0)
-
-        key_lbl = QtWidgets.QLabel("KEY")
-        key_lbl.setFont(label_font(7))
-        key_lbl.setStyleSheet(f"color: {DIM};")
-        kv.addWidget(key_lbl)
-
-        self._key_val = QtWidgets.QLabel("—")
-        self._key_val.setFont(label_font(11))
-        self._key_val.setStyleSheet(f"color: {FAINT};")
-        kv.addWidget(self._key_val)
-
-        h.addWidget(key_block)
+        # Right: license chip — one pill, color-coded
+        self._key_val = QtWidgets.QLabel("LOCKED")
+        self._key_val.setObjectName("licenseChip")
+        self._key_val.setProperty("state", "locked")
+        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+        f.setPointSize(9); f.setWeight(QtGui.QFont.Weight(700))
+        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 1.2)
+        self._key_val.setFont(f)
+        self._key_val.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._key_val.setMinimumHeight(30)
+        self._key_val.setMinimumWidth(110)
+        h.addWidget(self._key_val)
 
         return bar
 
@@ -627,12 +667,12 @@ class MainWindow(QtWidgets.QMainWindow):
         v = QtWidgets.QVBoxLayout(w)
         v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
 
-        # tab row
+        # tab row — pill nav, breathing room, no underline
         tab_bar = QtWidgets.QWidget()
-        tab_bar.setFixedHeight(36)
-        tab_bar.setStyleSheet(f"background: {SURFACE}; border-bottom: 1px solid {BORDER};")
+        tab_bar.setFixedHeight(56)
+        tab_bar.setStyleSheet(f"background: {BG}; border-bottom: 1px solid {BORDER};")
         th = QtWidgets.QHBoxLayout(tab_bar)
-        th.setContentsMargins(20, 0, 0, 0); th.setSpacing(0)
+        th.setContentsMargins(24, 10, 24, 10); th.setSpacing(6)
 
         pages    = ["Shooting", "Defense", "Features", "Live Stats"]
         builders = [self._pg_shooting, self._pg_defense,
@@ -664,19 +704,39 @@ class MainWindow(QtWidgets.QMainWindow):
         w = QtWidgets.QWidget()
         w.setStyleSheet(f"background: {BG};")
         v = QtWidgets.QVBoxLayout(w)
-        v.addStretch(1)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.addStretch(2)
 
-        icon = QtWidgets.QLabel("⬡")
-        icon.setFont(ui_font(28)); icon.setStyleSheet(f"color: {FAINT};")
-        icon.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        v.addWidget(icon)
+        # Big eyebrow label, then headline, then sub
+        eyebrow = QtWidgets.QLabel("LICENSE REQUIRED")
+        f1 = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+        f1.setPointSize(9); f1.setWeight(QtGui.QFont.Weight(700))
+        f1.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 2.5)
+        eyebrow.setFont(f1)
+        eyebrow.setStyleSheet(f"color: {ACCENT};")
+        eyebrow.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(eyebrow)
 
-        t = QtWidgets.QLabel("Enter your Discord ID to unlock")
-        t.setFont(ui_font(11)); t.setStyleSheet(f"color: {DIM};")
-        t.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        v.addWidget(t)
+        v.addSpacing(18)
 
-        v.addStretch(1)
+        headline = QtWidgets.QLabel("Enter your Discord ID")
+        f2 = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+        f2.setPointSize(26); f2.setWeight(QtGui.QFont.Weight(700))
+        f2.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, -0.5)
+        headline.setFont(f2)
+        headline.setStyleSheet(f"color: {TEXT};")
+        headline.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(headline)
+
+        v.addSpacing(8)
+
+        sub = QtWidgets.QLabel("to access shooting tools")
+        sub.setFont(ui_font(11))
+        sub.setStyleSheet(f"color: {DIM};")
+        sub.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(sub)
+
+        v.addStretch(3)
         return w
 
     # ── pages ──────────────────────────────────────────────────────────────────
@@ -688,7 +748,7 @@ class MainWindow(QtWidgets.QMainWindow):
         inner = QtWidgets.QWidget()
         inner.setStyleSheet(f"background: {BG};")
         lay = QtWidgets.QVBoxLayout(inner)
-        lay.setContentsMargins(16, 14, 16, 16); lay.setSpacing(12)
+        lay.setContentsMargins(24, 20, 24, 24); lay.setSpacing(16)
         scroll.setWidget(inner)
         return scroll, lay
 
@@ -697,7 +757,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         card = Card()
         cv = QtWidgets.QVBoxLayout(card)
-        cv.setContentsMargins(20, 18, 20, 20); cv.setSpacing(14)
+        cv.setContentsMargins(28, 26, 28, 28); cv.setSpacing(18)
 
         cv.addWidget(SectionLabel("Shot Timing"))
         cv.addSpacing(2)
@@ -777,7 +837,7 @@ class MainWindow(QtWidgets.QMainWindow):
         scroll, lay = self._scroll_page()
         card = Card()
         cv = QtWidgets.QVBoxLayout(card)
-        cv.setContentsMargins(20, 18, 20, 20); cv.setSpacing(14)
+        cv.setContentsMargins(28, 26, 28, 28); cv.setSpacing(18)
         cv.addWidget(SectionLabel("Defense"))
 
         tog = ToggleRow("Defense mode", "L2 + D-pad up to toggle in-game")
@@ -818,7 +878,7 @@ class MainWindow(QtWidgets.QMainWindow):
         scroll, lay = self._scroll_page()
         card = Card()
         cv = QtWidgets.QVBoxLayout(card)
-        cv.setContentsMargins(20, 18, 20, 20); cv.setSpacing(14)
+        cv.setContentsMargins(28, 26, 28, 28); cv.setSpacing(18)
         cv.addWidget(SectionLabel("Toggles"))
 
         stam = ToggleRow("Infinite stamina", "Scales R2 to 0.70× — prevents drain without breaking shots")
@@ -850,7 +910,7 @@ class MainWindow(QtWidgets.QMainWindow):
         scroll, lay = self._scroll_page()
         card = Card()
         cv = QtWidgets.QVBoxLayout(card)
-        cv.setContentsMargins(20, 18, 20, 20); cv.setSpacing(14)
+        cv.setContentsMargins(28, 26, 28, 28); cv.setSpacing(18)
         cv.addWidget(SectionLabel("Live stats"))
 
         grid = QtWidgets.QGridLayout(); grid.setSpacing(8)
@@ -888,17 +948,17 @@ class MainWindow(QtWidgets.QMainWindow):
             _engine.gpu_index = int(self._data.get("gpu_index", 0))
             _engine.start()
         if hasattr(self, "_key_val"):
-            self._key_val.setText(dur if dur else "—")
-            self._key_val.setStyleSheet(
-                f"color: {ACCENT}; letter-spacing: 2px;" if ok
-                else f"color: {FAINT};"
-            )
+            self._key_val.setText(dur if dur else "LOCKED")
+            self._key_val.setProperty("state", "active" if ok else "locked")
+            self._key_val.style().unpolish(self._key_val)
+            self._key_val.style().polish(self._key_val)
         if hasattr(self, "_id_field"):
+            border = "rgba(52,211,153,0.45)" if ok else BORDER
             self._id_field.setStyleSheet(f"""
                 QLineEdit {{
                     background: {SURF2}; color: {TEXT};
-                    border: 1px solid {"rgba(31,160,255,0.4)" if ok else BORDER};
-                    border-radius: 4px; padding: 4px 10px;
+                    border: 1px solid {border};
+                    border-radius: 6px; padding: 6px 12px;
                 }}
                 QLineEdit:focus {{ border-color: {ACCENT}; }}
             """)
