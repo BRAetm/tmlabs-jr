@@ -71,7 +71,7 @@ def label_font(size=8) -> QtGui.QFont:
 
 
 STYLESHEET = f"""
-* {{ outline: none; box-sizing: border-box; }}
+* {{ outline: none; }}
 
 QMainWindow, QDialog {{ background: {BG}; color: {TEXT}; }}
 QWidget {{ background: transparent; color: {TEXT}; }}
@@ -159,7 +159,6 @@ try:
         import bettercam as _bc
         _BC_OK = True
     except ImportError:
-        import mss as _mss
         _BC_OK = False
     try:
         from network_optimizer import apply as _net_apply, restore as _net_restore
@@ -248,8 +247,11 @@ class EngineRunner:
                 bridge.stick_tempo_enabled      = self.stick_tempo_enabled
                 bridge.quickstop_enabled        = self.quickstop_enabled
                 bridge.passthrough(_read_xi())
+                # DPAD_UP rising-edge → toggle defense mode (matches the UI hint
+                # in the Defense tab and engine_core.py; the bridge attribute name
+                # is legacy from the original quickstop wiring).
                 if bridge._qs_toggle_requested:
-                    self.quickstop_enabled = not self.quickstop_enabled
+                    self.defense_enabled = not self.defense_enabled
                     bridge._qs_toggle_requested = False
                 time.sleep(1 / 500)
         threading.Thread(target=_passthrough, daemon=True).start()
@@ -270,55 +272,65 @@ class EngineRunner:
             camera.start(region=reg, target_fps=target_fps, video_mode=True)
             try:
                 while not self._stop.is_set():
-                    bgr = camera.get_latest_frame()
-                    if bgr is None:
+                    try:
+                        bgr = camera.get_latest_frame()
+                        if bgr is None:
+                            continue
+                        frame_n += 1
+                        if frame_n % every_n != 0:
+                            continue
+                        gp = _read_xi()
+                        l2 = bool(gp and gp.bLeftTrigger > 128)
+                        detector.threshold_normal = self.threshold_normal
+                        detector.threshold_l2     = self.threshold_l2
+                        if detector.check(bgr, l2=l2):
+                            if self.defense_enabled:
+                                bridge.contest_flick()
+                            else:
+                                bridge.fire_shot(l2=l2, tempo=self.tempo, tempo_ms=self.tempo_ms)
+                            self.shots = detector.shots_fired
+                        fc += 1
+                        if (t := time.perf_counter()) - tw >= 1.0:
+                            self.fps_cur = fc / (t - tw); fc = 0; tw = t
+                    except Exception as ex:
+                        print(f"[ENGINE] frame error: {ex}")
                         continue
-                    frame_n += 1
-                    if frame_n % every_n != 0:
-                        continue
-                    gp = _read_xi()
-                    l2 = bool(gp and gp.bLeftTrigger > 128)
-                    detector.threshold_normal = self.threshold_normal
-                    detector.threshold_l2     = self.threshold_l2
-                    if detector.check(bgr, l2=l2):
-                        if self.defense_enabled:
-                            bridge.contest_flick()
-                        else:
-                            bridge.fire_shot(l2=l2, tempo=self.tempo, tempo_ms=self.tempo_ms)
-                        self.shots = detector.shots_fired
-                    fc += 1
-                    if (t := time.perf_counter()) - tw >= 1.0:
-                        self.fps_cur = fc / (t - tw); fc = 0; tw = t
             finally:
                 _pt_run[0] = False
-                camera.stop()
-                camera.release()
+                try: camera.stop()
+                except Exception: pass
+                try: camera.release()
+                except Exception: pass
         else:
             import mss as _mss
             with _mss.mss() as sct:
                 while not self._stop.is_set():
-                    t0  = time.perf_counter()
-                    bgr = _cv2.cvtColor(_np.asarray(sct.grab(region)), _cv2.COLOR_BGRA2BGR)
-                    frame_n += 1
-                    if frame_n % every_n != 0:
+                    try:
+                        t0  = time.perf_counter()
+                        frame_n += 1
+                        if frame_n % every_n != 0:
+                            wait = 1.0 / target_fps - (time.perf_counter() - t0)
+                            if wait > 0: time.sleep(wait)
+                            continue
+                        bgr = _cv2.cvtColor(_np.asarray(sct.grab(region)), _cv2.COLOR_BGRA2BGR)
+                        gp  = _read_xi()
+                        l2  = bool(gp and gp.bLeftTrigger > 128)
+                        detector.threshold_normal = self.threshold_normal
+                        detector.threshold_l2     = self.threshold_l2
+                        if detector.check(bgr, l2=l2):
+                            if self.defense_enabled:
+                                bridge.contest_flick()
+                            else:
+                                bridge.fire_shot(l2=l2, tempo=self.tempo, tempo_ms=self.tempo_ms)
+                            self.shots = detector.shots_fired
+                        fc += 1
+                        if (t := time.perf_counter()) - tw >= 1.0:
+                            self.fps_cur = fc / (t - tw); fc = 0; tw = t
                         wait = 1.0 / target_fps - (time.perf_counter() - t0)
                         if wait > 0: time.sleep(wait)
+                    except Exception as ex:
+                        print(f"[ENGINE] frame error: {ex}")
                         continue
-                    gp  = _read_xi()
-                    l2  = bool(gp and gp.bLeftTrigger > 128)
-                    detector.threshold_normal = self.threshold_normal
-                    detector.threshold_l2     = self.threshold_l2
-                    if detector.check(bgr, l2=l2):
-                        if self.defense_enabled:
-                            bridge.contest_flick()
-                        else:
-                            bridge.fire_shot(l2=l2, tempo=self.tempo, tempo_ms=self.tempo_ms)
-                        self.shots = detector.shots_fired
-                    fc += 1
-                    if (t := time.perf_counter()) - tw >= 1.0:
-                        self.fps_cur = fc / (t - tw); fc = 0; tw = t
-                    wait = 1.0 / target_fps - (time.perf_counter() - t0)
-                    if wait > 0: time.sleep(wait)
             _pt_run[0] = False
 
 
