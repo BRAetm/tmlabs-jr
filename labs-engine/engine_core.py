@@ -171,49 +171,56 @@ def main():
     every_n         = max(1, args.detect_every_n)
     try:
         while not _stop.is_set():
-            if capture_mode == "bettercam":
-                bgr = cam.get_latest_frame()
-            else:
-                bgra = np.asarray(sct.grab(mss_region))
-                bgr  = cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR)
-            if bgr is None:
-                continue
+            try:
+                # skip-before-capture: avoid expensive mss grab on dropped frames
+                frame_n += 1
+                if frame_n % every_n != 0:
+                    if capture_mode == "bettercam":
+                        cam.get_latest_frame()  # drain so we get fresh frame next tick
+                    continue
 
-            frame_n += 1
-            if frame_n % every_n != 0:
-                continue
-
-            gp = _read_xinput(args.xi_index)
-            l2 = bool(gp and gp.bLeftTrigger > 128)
-
-            if detector.check(bgr, l2=l2):
-                if bridge.defense_enabled:
-                    bridge.contest_flick()
+                if capture_mode == "bettercam":
+                    bgr = cam.get_latest_frame()
                 else:
-                    bridge.fire_shot(l2=l2, tempo=args.tempo, tempo_ms=args.tempo_ms)
-                print(f"[ENGINE] SHOT #{detector.shots_fired} type={'L2' if l2 else 'NORM'}",
-                      flush=True)
+                    bgra = np.asarray(sct.grab(mss_region))
+                    bgr  = cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR)
+                if bgr is None:
+                    continue
 
-            np_n  = len(detector._peak_history)
-            np_l2 = len(detector._peak_history_l2)
-            if np_n  != cal_reported_n  and not detector._calibration_locked:
-                print(f"[CAL] normal {np_n}/4", flush=True)
-                cal_reported_n = np_n
-            if np_l2 != cal_reported_l2 and not detector._calibration_locked_l2:
-                print(f"[CAL] L2 {np_l2}/4", flush=True)
-                cal_reported_l2 = np_l2
+                gp = _read_xinput(args.xi_index)
+                l2 = bool(gp and gp.bLeftTrigger > 128)
 
-            fc += 1
-            now = time.perf_counter()
-            if now - status_tw >= 1.0:
-                fps    = fc / (now - status_tw)
-                cal_n  = "LOCK" if detector._calibration_locked    else f"{np_n}/4"
-                cal_l2 = "LOCK" if detector._calibration_locked_l2 else f"{np_l2}/4"
-                print(f"[STATUS] fps={fps:.0f} shots={detector.shots_fired} "
-                      f"cal=(n:{cal_n} l2:{cal_l2}) defense={bridge.defense_enabled}",
-                      flush=True)
-                fc = 0
-                status_tw = now
+                if detector.check(bgr, l2=l2):
+                    if bridge.defense_enabled:
+                        bridge.contest_flick()
+                    else:
+                        bridge.fire_shot(l2=l2, tempo=args.tempo, tempo_ms=args.tempo_ms)
+                    print(f"[ENGINE] SHOT #{detector.shots_fired} type={'L2' if l2 else 'NORM'}",
+                          flush=True)
+
+                np_n  = len(detector._peak_history)
+                np_l2 = len(detector._peak_history_l2)
+                if np_n  != cal_reported_n  and not detector._calibration_locked:
+                    print(f"[CAL] normal {np_n}/4", flush=True)
+                    cal_reported_n = np_n
+                if np_l2 != cal_reported_l2 and not detector._calibration_locked_l2:
+                    print(f"[CAL] L2 {np_l2}/4", flush=True)
+                    cal_reported_l2 = np_l2
+
+                fc += 1
+                now = time.perf_counter()
+                if now - status_tw >= 1.0:
+                    fps    = fc / (now - status_tw)
+                    cal_n  = "LOCK" if detector._calibration_locked    else f"{np_n}/4"
+                    cal_l2 = "LOCK" if detector._calibration_locked_l2 else f"{np_l2}/4"
+                    print(f"[STATUS] fps={fps:.0f} shots={detector.shots_fired} "
+                          f"cal=(n:{cal_n} l2:{cal_l2}) defense={bridge.defense_enabled}",
+                          flush=True)
+                    fc = 0
+                    status_tw = now
+            except Exception as ex:
+                print(f"[ENGINE] frame error: {ex}", flush=True)
+                continue
     finally:
         _stop.set()
         if cam is not None:
