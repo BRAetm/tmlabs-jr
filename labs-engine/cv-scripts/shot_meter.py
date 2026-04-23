@@ -48,13 +48,55 @@ class _XGP(ctypes.Structure):
 class _XS(ctypes.Structure):
     _fields_ = [("dwPacketNumber", ctypes.c_ulong), ("Gamepad", _XGP)]
 
-def _read_xinput(idx=0):
+
+# Resolve XInput DLL once at module load. Try 1.4 (Win8+), fall back to 1.3 (Win7).
+# 1.4 ships with Windows; 1.3 ships with the DirectX runtime. Most users have one.
+_XI = None
+_XI_NAME = None
+for _name in ("xinput1_4", "xinput1_3", "xinput9_1_0"):
     try:
-        xi = ctypes.windll.xinput1_4
-        s  = _XS()
-        return s.Gamepad if xi.XInputGetState(idx, ctypes.byref(s)) == 0 else None
+        _XI = getattr(ctypes.windll, _name)
+        _XI.XInputGetState.argtypes = [ctypes.c_uint, ctypes.POINTER(_XS)]
+        _XI.XInputGetState.restype  = ctypes.c_uint
+        _XI_NAME = _name
+        break
     except Exception:
+        continue
+
+ERROR_SUCCESS              = 0
+ERROR_DEVICE_NOT_CONNECTED = 1167
+
+# Per-slot connection state for one-time connect/disconnect logging.
+_xi_was_connected = [False, False, False, False]
+
+
+def _read_xinput(idx: int = 0):
+    """Read gamepad state for slot idx (0-3). Returns the GAMEPAD struct or None."""
+    if _XI is None:
         return None
+    s = _XS()
+    rc = _XI.XInputGetState(idx, ctypes.byref(s))
+    connected = (rc == ERROR_SUCCESS)
+    # State-change diagnostics — one print per connect/disconnect, not per poll.
+    if 0 <= idx < 4 and connected != _xi_was_connected[idx]:
+        _xi_was_connected[idx] = connected
+        if connected:
+            print(f"[XINPUT] slot {idx} connected ({_XI_NAME})")
+        else:
+            print(f"[XINPUT] slot {idx} disconnected")
+    return s.Gamepad if connected else None
+
+
+def xinput_status() -> dict:
+    """Diagnostic: returns DLL name and which slots have controllers right now."""
+    if _XI is None:
+        return {"dll": None, "slots": []}
+    slots = []
+    for i in range(4):
+        s = _XS()
+        if _XI.XInputGetState(i, ctypes.byref(s)) == ERROR_SUCCESS:
+            slots.append(i)
+    return {"dll": _XI_NAME, "slots": slots}
 
 
 # ── Window finder ─────────────────────────────────────────────────────────────
