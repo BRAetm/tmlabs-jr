@@ -67,56 +67,103 @@ Built cleanly, launched, title verified. Awaiting the user's end-to-end test on 
 
 ---
 
-## 2026-04-22 update — engine_core.py built, SHM integration ready
+## 2026-04-23 — Architecture pivot to Path A (wrap, don't build Remote Play)
 
-Shift in architecture: SecretK.py (standalone Python app with its own UI + BetterCam capture + vgamepad output) is **replaced** by a headless `engine_core.py` that LabsEngine's CvPythonPlugin auto-spawns and talks to via SHM. User deleted `SecretK.py`, `userdata/`, `refence/`, and `zp-higher-lite-full/` from the tree to clean up.
+**Decision:** LabsEngine no longer builds its own Remote Play stack. Instead it wraps
+whatever Remote Play app the user already has open (Chiaki, Xbox Remote Play, or the
+official PS Remote Play). LabsEngine becomes a "scripts + capture + virtual controller
+routing" hub. ZP HIGHER Lite proved this model works — they don't ship Remote Play either.
+
+**Why:** building consumer-grade Remote Play is a quarter of work (audio sink,
+auto-reconnect, UDP discovery, adaptive bitrate, pairing without LabsSharp, FFmpeg
+decode threading, WoL, error states, profiles per console). The shot timer is the
+differentiator — that's where the time should go.
+
+**What this means for the C++ side (other AI's TODO):**
+- **Rip the entire `app/plugins/ps_remote_play/` plugin.** Including FFmpeg, `labs.dll`,
+  PSN OAuth, pairing dialogs, all of it.
+- **Rip `importLabsSharpPairing()`** from `app/engine/LabsMainWindow.cpp` — no more
+  reading `%APPDATA%\PSRemotePlay\hosts.json`.
+- **Keep:** XInput plugin (with skip mask 0x01), ViGEm output plugin, WGC capture
+  plugin (still useful for Xbox Remote Play window mode), Display plugin, CV Python
+  plugin, all the engine settings UI.
+- **Update:** Mode switcher becomes "What's the streaming app?" → Chiaki / Xbox Remote
+  Play / Official PS. Each just sets the `find_window()` keyword the script uses.
+- **First-run flow:** "1. Open your Remote Play app and start streaming. 2. Click
+  Start Engine in Labs Engine." That's it. No pairing, no PSN login, no codec settings.
+- **Settings UI** (Shooting / Defense / Features / Engine tabs) belongs in the C++ app
+  now, not in any Python UI. Pass values to SecretK.py via CLI args.
+
+## 2026-04-23 — SecretK.py is now ONE script (PySide6 UI deleted)
+
+The PySide6 UI version of SecretK.py was a "second app" mistake — SecretK was supposed
+to be just a script run by LabsEngine. Deleted that file. The headless `engine_core.py`
+got renamed to `labs-engine/scripts/SecretK.py` (the path LabsEngine's CV plugin
+already looks at).
+
+The script side is done — accepts CLI args from LabsEngine, captures via BetterCam or
+mss, runs shot meter detection, fires gamepad via vgamepad. ~232 lines. No UI.
+
+## 2026-04-22 — Earlier update (engine_core.py built)
+
+After exploring two architectures, settled on the simpler one: `engine_core.py` does its own window-finding + BetterCam capture + vgamepad output, exactly like SecretK.py but headless. **No SHM channel for frames or gamepad** — vgamepad is the controller transport, LabsEngine's XInput plugin picks up the virtual pad on slot 1+.
+
+### Where SecretK.py lives now
+Not deleted — moved to `labs-engine/scripts/SecretK.py`. Still importable / runnable as the standalone PySide6 app. `engine_core.py` is the headless equivalent that LabsEngine's `CvPythonPlugin` auto-spawns.
 
 ### What this session built
-- **`labs-engine/engine_core.py`** — headless entry point. Auto-spawned by LabsEngine with `--labs-pid <PID> --session <SID>`. Reads frames from `Labs_<labsPid>_Frame_<sid>` SHM, writes gamepad to `Labs_<mypid>_Gamepad` SHM, signals via named events. Feature-complete:
-  - Frame SHM reader with magic validation + 30s retry
-  - Gamepad SHM writer with proper magic, sequence, event signaling
-  - 500Hz XInput passthrough
-  - Shot meter detection via `cv-scripts/shot_meter.py::ShotMeterDetector`
-  - `FeatureBridge` class with defense AI, stamina scaling, tempo, stick tempo, quickstop, contest flick, auto-hands-up
-  - DPAD_UP rising edge → toggles defense (matches ZP reference UI)
+- **`labs-engine/engine_core.py`** — 153 lines. Spawned by LabsEngine with `--labs-pid <PID> --session <SID>` (both args accepted but ignored — no SHM channel needed):
+  - `find_window()` from `shot_meter.py` locates LabsEngine's "Remote Play" window
+  - BetterCam captures that region at 240fps target
+  - `ShotMeterDetector` (cv-scripts/shot_meter.py) does the BGR meter detection
+  - `PSControllerBridge` (cv-scripts/features.py) handles all gamepad output through VDS4 + VX360 virtual pads
+  - Detection loop fires `bridge.fire_shot()` (or `bridge.contest_flick()` in defense mode)
+  - 500Hz `bridge.passthrough()` thread mirrors physical XInput onto virtual pads
+  - DPAD_UP rising edge in passthrough toggles defense mode (consumes `bridge._qs_toggle_requested` flag)
   - SIGINT/SIGTERM/SIGBREAK clean shutdown
-  - Periodic `[STATUS]` + `[CAL]` + `[ENGINE] SHOT #N` stdout lines for LabsEngine to parse
-  - Flags: `--threshold`, `--threshold-l2`, `--tempo-ms`, `--tempo`, `--stick-tempo`, `--quickstop`, `--defense`, `--stamina`, `--no-hands-up`, `--xi-index`
+  - Stdout lines for LabsEngine UI: `[ENGINE] SHOT #N`, `[CAL] normal N/4`, `[STATUS] fps=N shots=N cal=(...) defense=...`
+  - Flags: `--threshold`, `--threshold-l2`, `--tempo`, `--tempo-ms`, `--stick-tempo`, `--quickstop`, `--defense`, `--stamina`, `--no-hands-up`, `--xi-index`, `--gpu`
 
-### C++ side status (verified by exploration)
-- **Frame SHM publishing**: `FrameShmWriter::write()` in [app/plugins/cv_python/ShmBus.cpp:84-107](app/plugins/cv_python/ShmBus.cpp) — active, publishes BGRA at offset 64 with dynamic stride. WGC source at display refresh; PS Remote Play at `ps/fps` setting (default 60).
-- **Auto-spawn**: `CvPythonPlugin::launchPython()` at [app/plugins/cv_python/CvPythonPlugin.cpp:84-113](app/plugins/cv_python/CvPythonPlugin.cpp) — launches configured `cv/scriptPath` with `--labs-pid`/`--session` on plugin start.
-- **Gamepad → ViGEm**: `GamepadShmReader` → `CvPythonPlugin::setSink` → fan-out → `ViGEmSink::pushState` wiring is complete. Fan-out is last-writer-wins.
-
-### Known risks for live testing
-- **Dual gamepad sources**: LabsEngine's XInput source plugin reads the physical pad AND our SHM writes it too. Both feed the same fan-out. RT fire pulse could be stomped by the physical pad's current RT. First thing to check if fires don't land in-game.
-- **Frame format**: Script assumes BGRA at offset 64. Cross-check first frame with `width × height × 4 == payload_size` from header.
-- **Session ID drift**: LabsEngine builds the frame block name from `--session` it spawned us with. If settings change mid-run, block name won't match.
+### How the integration works
+1. LabsEngine starts → window title contains "Remote Play" so `find_window()` finds it
+2. CvPythonPlugin auto-spawns `engine_core.py` with `--labs-pid`/`--session` args (ignored)
+3. engine_core BetterCam-captures LabsEngine's window
+4. PSControllerBridge spins up VDS4 + VX360 virtual gamepads via vgamepad/ViGEm
+5. LabsEngine's XInput plugin reads the virtual pad (skip mask 0x01 skips physical slot 0)
+6. LabsEngine forwards the virtual pad state to PS5 via `labs_session_set_controller_state`
 
 ### Integration test steps
-1. In LabsEngine settings, set `cv/scriptPath` = `labs-engine/engine_core.py` and `cv/pythonPath` = working Python 3.11 with `numpy`, `opencv-python`, `pywin32` (for `shot_meter.find_window`, though we don't call it now — can drop pywin32 if unused).
-2. Start LabsEngine → pick Xbox or PS mode → engine_core.py should spawn (child python.exe under LabsEngine in Task Manager).
-3. In the log strip, watch for `[FRAME-SHM] attached`, `[STATUS] fps=N frames=N` each second.
-4. Load NBA 2K via the stream, hold 4 shots to calibrate → `[CAL] normal N/4` then `[BGR-METER] Calibration LOCKED`.
-5. Release a shot → `[ENGINE] SHOT #1` → virtual Xbox pad should briefly press RT.
-6. Tap DPAD_UP → `[BRIDGE] defense ON` and a brief RS-up flick (auto-hands-up).
+1. `pip install bettercam vgamepad opencv-python numpy pywin32` on the PC
+2. In LabsEngine settings, set `cv/scriptPath` = `labs-engine/engine_core.py` (and `cv/pythonPath` if Python isn't on PATH)
+3. Start LabsEngine → PS mode → engine_core.py spawns (visible as child python.exe in Task Manager)
+4. Watch the log strip for `[ENGINE] BetterCam region=...` and `[STATUS] fps=N` each second
+5. Load NBA 2K, hold 4 shots → `[CAL] normal 1/4`...`4/4` → `[BGR-METER] Calibration LOCKED`
+6. Release a shot → `[ENGINE] SHOT #1`, RT pulses on virtual pad → forwarded to PS5
+7. Tap DPAD_UP → `[BRIDGE] defense ON`, RS auto-hands-up flick fires
+
+### Known risks for live testing
+- **Virtual pad slot assignment**: vgamepad usually lands the VX360 on slot 1 if physical is on 0. If something else is plugged in (real Xbox controller, joystick), the virtual pad could land on slot 2 or 3. LabsEngine's skip mask is 0x01 (skip slot 0 only) so anything on 1, 2, or 3 still gets read — should be fine.
+- **VDS4 detection by Chiaki/SDL**: PSControllerBridge sends an OPTIONS-button pulse on init to wake the VDS4 enumeration. If LabsEngine's PS Remote Play plugin reads via XInput (VX360 path), the VDS4 is unused — could remove that pulse if it confuses anything.
+- **find_window() before LabsEngine displays**: If engine_core.py runs before LabsEngine's window has its title set, `find_window()` falls back to the full primary monitor. Restart engine_core.py after LabsEngine's title is `"Labs Engine - PS Remote Play"`.
 
 ### Files of interest
-- [labs-engine/engine_core.py](labs-engine/engine_core.py) — no changes needed unless a bug surfaces
-- [labs-engine/cv-scripts/shot_meter.py](labs-engine/cv-scripts/shot_meter.py) — BGRMeterDetector (all ZP bytecode constants)
-- [labs-engine/cv-scripts/features.py](labs-engine/cv-scripts/features.py) — old vgamepad-based PSControllerBridge, now unused by engine_core.py (kept for reference; could be deleted later)
-- [labs-engine/cv-scripts/network_optimizer.py](labs-engine/cv-scripts/network_optimizer.py) — 7 TCP registry tweaks, not wired into engine_core.py yet
-- [app/plugins/cv_python/ShmBus.cpp](app/plugins/cv_python/ShmBus.cpp) — byte layout reference
-- [app/plugins/cv_python/CvPythonPlugin.cpp](app/plugins/cv_python/CvPythonPlugin.cpp) — spawn + sink wiring
-- Plan file: `C:\Users\TM\.claude\plans\tingly-kindling-meerkat.md`
+- [labs-engine/engine_core.py](labs-engine/engine_core.py) — entry point
+- [labs-engine/cv-scripts/shot_meter.py](labs-engine/cv-scripts/shot_meter.py) — BGRMeterDetector + find_window + _read_xinput
+- [labs-engine/cv-scripts/features.py](labs-engine/cv-scripts/features.py) — PSControllerBridge (VDS4 + VX360, defense, tempo, quickstop, contest flick)
+- [labs-engine/cv-scripts/network_optimizer.py](labs-engine/cv-scripts/network_optimizer.py) — 7 TCP registry tweaks, not wired in yet
+- [labs-engine/scripts/SecretK.py](labs-engine/scripts/SecretK.py) — standalone PySide6 app version (kept around)
+- [app/plugins/cv_python/CvPythonPlugin.cpp](app/plugins/cv_python/CvPythonPlugin.cpp) — spawn logic (still passes `--labs-pid`/`--session`, harmless)
+- [app/plugins/xinput_input/XInputPlugin.cpp](app/plugins/xinput_input/XInputPlugin.cpp) — reads the virtual pad
+- Plan file: `C:\Users\TM\.claude\plans\tingly-kindling-meerkat.md` (slightly stale — describes the SHM version)
 
-### Optional future work (not blocking the test)
-- Live control SHM so LabsEngine's UI can adjust thresholds/flags without restart
-- Stats SHM for richer UI display (stdout parsing is enough for now)
-- Recalibrate signal (reset `_peak_history` mid-session)
-- `--fire-button` flag to fire RB/A instead of RT
-- Wire `network_optimizer.apply()/restore()` into engine_core.py startup/shutdown if low-latency toggle should follow the engine lifecycle
-- Delete `labs-engine/cv-scripts/features.py` and `zp_shot_meter.py` once confirmed unused
+### GitHub
+Pushed to `https://github.com/BRAetm/tmlabs-jr` (public). Origin remote name is `tmlabs`. Old origin `labs-engine-final` still exists too.
+
+### Optional future work (not blocking)
+- Wire `network_optimizer.apply()/restore()` into engine_core.py startup/shutdown
+- `--fire-button` flag for RB/A instead of RT
+- Live settings (read settings file or stdin) so LabsEngine UI can tweak thresholds without restart
+- Delete `labs-engine/cv-scripts/zp_shot_meter.py` if confirmed unused
 
 ---
 
