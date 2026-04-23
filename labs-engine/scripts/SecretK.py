@@ -759,44 +759,44 @@ class MainWindow(QtWidgets.QMainWindow):
         cv = QtWidgets.QVBoxLayout(card)
         cv.setContentsMargins(28, 26, 28, 28); cv.setSpacing(18)
 
-        cv.addWidget(SectionLabel("Shot Timing"))
+        cv.addWidget(SectionLabel("Shooting"))
         cv.addSpacing(2)
 
-        # threshold_normal
-        self._sl_normal = SliderRow("Fade timing", 50.0, 100.0, decimals=1, unit="%", step=0.5)
+        # threshold_normal — open shots
+        self._sl_normal = SliderRow("Open Shot Timing", 50.0, 100.0, decimals=1, unit="%", step=0.5)
         self._sl_normal.setValue(float(self._data.get("timing_value", 95.0)))
         def _sn(x): self._set("timing_value", x); _engine.threshold_normal = x / 100.0
         self._sl_normal.valueChanged.connect(_sn)
         _engine.threshold_normal = self._sl_normal.value() / 100.0
         cv.addWidget(self._sl_normal)
 
-        hint1 = QtWidgets.QLabel("Release point for fades — meter fill % before R2 fires")
+        hint1 = QtWidgets.QLabel("How full the shot meter has to be before the script releases")
         hint1.setFont(ui_font(8)); hint1.setStyleSheet(f"color: {DIM};")
         cv.addWidget(hint1)
         cv.addWidget(_divider())
 
-        # threshold_l2
-        self._sl_l2 = SliderRow("No-dip timing", 50.0, 100.0, decimals=1, unit="%", step=0.5)
+        # threshold_l2 — L2/contested shots
+        self._sl_l2 = SliderRow("Contested Shot Timing", 50.0, 100.0, decimals=1, unit="%", step=0.5)
         self._sl_l2.setValue(float(self._data.get("shot_confidence", 75.0)))
         def _sl(x): self._set("shot_confidence", x); _engine.threshold_l2 = x / 100.0
         self._sl_l2.valueChanged.connect(_sl)
         _engine.threshold_l2 = self._sl_l2.value() / 100.0
         cv.addWidget(self._sl_l2)
 
-        hint2 = QtWidgets.QLabel("Release point while L2 is held (no-dip shots)")
+        hint2 = QtWidgets.QLabel("Used when you hold L2 (hesitation / no-dip shots)")
         hint2.setFont(ui_font(8)); hint2.setStyleSheet(f"color: {DIM};")
         cv.addWidget(hint2)
         cv.addWidget(_divider())
 
         # tempo
-        self._sl_tempo = SliderRow("Tempo delay", 0.0, 200.0, decimals=0, unit="ms", step=1)
+        self._sl_tempo = SliderRow("Release Delay", 0.0, 200.0, decimals=0, unit="ms", step=1)
         self._sl_tempo.setValue(float(self._data.get("rhythm_tempo_ms", 39)))
         def _stm(x): self._set("rhythm_tempo_ms", x); _engine.tempo_ms = int(x)
         self._sl_tempo.valueChanged.connect(_stm)
         _engine.tempo_ms = int(self._sl_tempo.value())
         cv.addWidget(self._sl_tempo)
 
-        self._tog_tempo = ToggleRow("Enable tempo delay", "Adds fixed delay before releasing on fades")
+        self._tog_tempo = ToggleRow("Use Release Delay", "Pause briefly before each shot fires")
         self._tog_tempo.setChecked(bool(self._data.get("rhythm_enabled", False)))
         def _tt(v): self._set("rhythm_enabled", v); _engine.tempo = v
         self._tog_tempo.toggled.connect(_tt)
@@ -807,8 +807,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # stick tempo
         self._tog_stick_tempo = ToggleRow(
-            "Stick tempo",
-            f"RS DOWN flick for tempo_ms ({_engine.tempo_ms}ms) then R2 — exact ZP stick_tempo sequence"
+            "Smart Stick Tempo",
+            "Pulls the right stick down before each shot for tempo timing"
         )
         self._tog_stick_tempo.setChecked(bool(self._data.get("stick_tempo_enabled", False)))
         def _stk(v): self._set("stick_tempo_enabled", v); _engine.stick_tempo_enabled = v
@@ -820,8 +820,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # quickstop
         self._tog_quickstop = ToggleRow(
-            "Quickstop assist",
-            "RS pull-down (20ms) + pause (15ms) before R2 — times quickstop footwork release"
+            "Quickstop",
+            "Times the quickstop footwork before releasing"
         )
         self._tog_quickstop.setChecked(bool(self._data.get("quickstop_enabled", False)))
         def _qs(v): self._set("quickstop_enabled", v); _engine.quickstop_enabled = v
@@ -840,7 +840,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cv.setContentsMargins(28, 26, 28, 28); cv.setSpacing(18)
         cv.addWidget(SectionLabel("Defense"))
 
-        tog = ToggleRow("Defense mode", "L2 + D-pad up to toggle in-game")
+        tog = ToggleRow("Smart Defense", "Press D-Pad Up while playing to toggle on / off")
         tog.setChecked(bool(self._data.get("defense_enabled", False)))
         def _def(v):
             self._set("defense_enabled", v)
@@ -850,15 +850,15 @@ class MainWindow(QtWidgets.QMainWindow):
         cv.addWidget(tog)
 
         cv.addWidget(_divider())
-        cv.addWidget(SectionLabel("Sub-features"))
+        cv.addWidget(SectionLabel("Smart Defense Helpers"))
         cv.addSpacing(2)
 
         _sub_map = [
-            ("defense_anti_blowby",        "Anti-blowby",        "Caps sprint R2 to 0.40 -- prevents over-committing",        "defense_anti_blowby"),
-            ("defense_auto_hands_up",      "Auto hands up",      "RS-up flick when you toggle into defense mode",              "defense_auto_hands_up"),
-            ("defense_contest_assist",     "Contest assist",     "Auto RS-up (80ms) when shot meter fires on defense",         "defense_contest_assist"),
-            ("defense_lateral_boost",      "Lateral boost",      "Lateral RS x1.20 for tighter ballhandler tracking",          "defense_lateral_boost"),
-            ("defense_sensitivity_boost",  "Sensitivity boost",  "Vertical RS x1.30 for shot contest / hands-up response",     "defense_sensitivity_boost"),
+            ("defense_anti_blowby",        "Stay Tight",            "Stops you from over-committing on sprints",                       "defense_anti_blowby"),
+            ("defense_auto_hands_up",      "Auto Hands Up",         "Raises your hands the moment Smart Defense kicks in",            "defense_auto_hands_up"),
+            ("defense_contest_assist",     "Auto Contest Shots",    "Auto-contests when an opponent shoots near you",                  "defense_contest_assist"),
+            ("defense_lateral_boost",      "Quicker Side Steps",    "Sharper side movement to track ballhandlers",                     "defense_lateral_boost"),
+            ("defense_sensitivity_boost",  "Sharper Stick Response","More responsive stick for contests and hands-up",                  "defense_sensitivity_boost"),
         ]
         for key, label, hint, attr in _sub_map:
             sub = ToggleRow(label, hint)
@@ -879,9 +879,9 @@ class MainWindow(QtWidgets.QMainWindow):
         card = Card()
         cv = QtWidgets.QVBoxLayout(card)
         cv.setContentsMargins(28, 26, 28, 28); cv.setSpacing(18)
-        cv.addWidget(SectionLabel("Toggles"))
+        cv.addWidget(SectionLabel("Boosts"))
 
-        stam = ToggleRow("Infinite stamina", "Scales R2 to 0.70× — prevents drain without breaking shots")
+        stam = ToggleRow("Never Run Out of Stamina", "Keeps your stamina from draining out during shots")
         stam.setChecked(bool(self._data.get("infinite_stamina", False)))
         def _stam(v):
             self._set("infinite_stamina", v)
@@ -891,7 +891,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cv.addWidget(stam)
         cv.addWidget(_divider())
 
-        lat = ToggleRow("Low latency mode", "7 network optimizations")
+        lat = ToggleRow("Reduce Lag", "Optimizes your connection for smoother online play")
         lat.setChecked(bool(self._data.get("low_latency", True)))
         def _lat(v):
             self._set("low_latency", v)
@@ -913,10 +913,10 @@ class MainWindow(QtWidgets.QMainWindow):
         cv.setContentsMargins(28, 26, 28, 28); cv.setSpacing(18)
         cv.addWidget(SectionLabel("Live stats"))
 
-        grid = QtWidgets.QGridLayout(); grid.setSpacing(8)
-        self._st_rel = StatBox("Shots Fired", "0")
+        grid = QtWidgets.QGridLayout(); grid.setSpacing(12)
+        self._st_rel = StatBox("Shots Made", "0")
         self._st_ses = StatBox("Time Left", self._time_left_val())
-        self._st_key = StatBox("License", validate(str(self._data.get("discord_id","")))[1] or "—")
+        self._st_key = StatBox("Plan", validate(str(self._data.get("discord_id","")))[1] or "—")
         grid.addWidget(self._st_rel, 0, 0)
         grid.addWidget(self._st_ses, 0, 1)
         grid.addWidget(self._st_key, 1, 0, 1, 2)

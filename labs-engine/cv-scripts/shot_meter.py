@@ -237,6 +237,14 @@ class ShotMeterDetector:
         self.frame_count    = 0
         self._last_log_time = 0.0
 
+        # auto color learning — sample real meter pixels over the first N detections
+        # and tighten the BGR ranges to match. Robust to game-skin / display drift.
+        self.auto_color_learn        = True
+        self._color_samples          = []          # (B,G,R) tuples sampled from contour pixels
+        self._color_locked           = False
+        self._color_learn_target     = 12          # samples needed before locking
+        self._learned_meter_ranges   = None        # list[(lo, hi)] once locked
+
     # ── public API ─────────────────────────────────────────────────────────────
 
     @property
@@ -329,6 +337,14 @@ class ShotMeterDetector:
         if h < self._ABSOLUTE_MIN_HEIGHT:
             return self._handle_no_detection()
 
+        # ── auto color learning ──
+        # Sample the actual contour-region BGR over the first N detections so the
+        # ranges adapt to the real meter color in this player's setup.
+        if self.auto_color_learn and not self._color_locked:
+            self._sample_contour_color(frame, x, y, w, h)
+            if len(self._color_samples) >= self._color_learn_target:
+                self._lock_learned_color()
+
         # dynamic calibration: 90th percentile of peak heights
         l2_held = l2
         if l2_held and not self._calibration_locked_l2:
@@ -390,13 +406,54 @@ class ShotMeterDetector:
 
     def _process_mask_cpu(self, frame: np.ndarray) -> np.ndarray:
         mask = np.zeros(frame.shape[:2], dtype=np.uint8)
-        for lo, hi in self._METER_RANGES:
+        # Use learned ranges if we've auto-calibrated; otherwise the seed ranges.
+        ranges = self._learned_meter_ranges if self._color_locked else self._METER_RANGES
+        for lo, hi in ranges:
             mask |= cv2.inRange(frame, lo, hi)
         # ZP applies CLOSE then OPEN to reduce noise speckles
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         mask   = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         mask   = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
         return mask
+
+    # ── auto color learning ──────────────────────────────────────────────────
+    def _sample_contour_color(self, frame: np.ndarray, x: int, y: int, w: int, h: int):
+        """Sample the mean BGR of bright pixels inside the contour box."""
+        # Crop to the contour box, then look at pixels brighter than 60 (skip
+        # background / dark UI). The meter fill is bright magenta — easy to
+        # separate from the dark game UI behind it.
+        box = frame[max(0, y):y + h, max(0, x):x + w]
+        if box.size == 0:
+            return
+        # Bright pixel mask
+        gray = box.mean(axis=2)
+        bright = box[gray > 60]
+        if bright.shape[0] < 8:
+            return
+        mean = bright.mean(axis=0)
+        self._color_samples.append((float(mean[0]), float(mean[1]), float(mean[2])))
+
+    def _lock_learned_color(self):
+        """Build a tight BGR range from sampled means and lock it in."""
+        if not self._color_samples:
+            return
+        arr = np.array(self._color_samples, dtype=np.float32)
+        mean = arr.mean(axis=0)
+        std  = arr.std(axis=0).clip(min=8.0)   # at least 8 unit window
+        # Build a ±2σ box around the mean, clipped to valid uint8.
+        lo = np.clip(mean - 2.5 * std, 0, 255).astype(np.uint8)
+        hi = np.clip(mean + 2.5 * std, 0, 255).astype(np.uint8)
+        self._learned_meter_ranges = [(lo, hi)]
+        self._color_locked = True
+        print(f"[BGR-METER] color auto-calibrated: mean BGR=({int(mean[0])},{int(mean[1])},{int(mean[2])}) "
+              f"range=±{int(std.mean()*2.5)}")
+
+    def recalibrate_color(self):
+        """Public: clear color learning so it relearns next session."""
+        self._color_samples.clear()
+        self._color_locked = False
+        self._learned_meter_ranges = None
+        print("[BGR-METER] color calibration cleared — will relearn")
 
     def _detect_green_zone(self, frame: np.ndarray):
         mask = np.zeros(frame.shape[:2], dtype=np.uint8)
