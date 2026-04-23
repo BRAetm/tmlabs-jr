@@ -68,8 +68,19 @@ def _resolve_settings(s: dict) -> dict:
     return out
 
 
-def run(settings: dict | None = None) -> int:
-    """Block on the engine. Returns when stop is signaled or capture errors fatally."""
+def run(settings: dict | None = None,
+        stop_event: "threading.Event | None" = None,
+        on_shot=None,
+        on_status=None) -> int:
+    """
+    Block on the engine. Returns when stop_event is set or capture errors fatally.
+
+    settings : dict (see DEFAULT_SETTINGS for keys)
+    stop_event : optional Event the caller sets to stop the engine cleanly.
+                 If None, the function installs SIGINT/SIGTERM handlers instead.
+    on_shot    : optional callback(shots_fired:int, l2:bool) called on each shot.
+    on_status  : optional callback(state:dict) called whenever calibration progresses.
+    """
     cfg = _resolve_settings(settings or {})
 
     # Locate the capture window.
@@ -109,12 +120,19 @@ def run(settings: dict | None = None) -> int:
     bridge.stick_tempo_enabled = cfg["stick_tempo"]
     bridge.quickstop_enabled   = cfg["quickstop"]
 
-    _stop = threading.Event()
-    def _handle_signal(_sig, _frame): _stop.set()
-    signal.signal(signal.SIGINT,  _handle_signal)
-    signal.signal(signal.SIGTERM, _handle_signal)
-    if hasattr(signal, "SIGBREAK"):
-        signal.signal(signal.SIGBREAK, _handle_signal)
+    _stop = stop_event if stop_event is not None else threading.Event()
+    # Only install signal handlers when running in main thread (CLI invocation).
+    # When called from a UI thread, the caller manages stop via the event.
+    if stop_event is None:
+        try:
+            def _handle_signal(_sig, _frame): _stop.set()
+            signal.signal(signal.SIGINT,  _handle_signal)
+            signal.signal(signal.SIGTERM, _handle_signal)
+            if hasattr(signal, "SIGBREAK"):
+                signal.signal(signal.SIGBREAK, _handle_signal)
+        except ValueError:
+            # signal.signal raises in non-main threads — fine, caller has the event.
+            pass
 
     # Passthrough thread: physical XInput → virtual VDS4/VX360.
     pt_interval = 1.0 / max(1, cfg["passthrough_hz"])
@@ -159,6 +177,9 @@ def run(settings: dict | None = None) -> int:
                     else:
                         bridge.fire_shot(l2=l2, tempo=cfg["tempo"], tempo_ms=cfg["tempo_ms"])
                     print(f"Shot #{detector.shots_fired}", flush=True)
+                    if on_shot:
+                        try: on_shot(detector.shots_fired, l2)
+                        except Exception: pass
 
                 # Calibration progress (changes only — not per frame).
                 np_n  = len(detector._peak_history)

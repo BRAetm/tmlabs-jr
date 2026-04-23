@@ -11,7 +11,9 @@ namespace Labs {
 ControllerMonitorWidget::ControllerMonitorWidget(QWidget* parent)
     : QWidget(parent)
 {
-    setMinimumSize(720, 460);
+    // Compact minimum so the widget shrinks gracefully when the window does.
+    // Drawing math is purely fractional (W * 0.20 etc) so it scales to any size.
+    setMinimumSize(420, 260);
     setAttribute(Qt::WA_OpaquePaintEvent, false);
 }
 
@@ -256,22 +258,28 @@ void ControllerMonitorWidget::paintEvent(QPaintEvent*)
     p.drawText(QRect(0, 0, W - 16, hdrH), Qt::AlignVCenter | Qt::AlignRight, statusStr);
 
     // ── Main controller diagram ──────────────────────────────────────────────
-    const int oscH    = 100;
-    const int diagY0  = hdrH + 14;
-    const int diagY1  = H - oscH - 8;
+    // Oscilloscope shrinks for small windows so the controller diagram still fits.
+    const int oscH    = qBound(60, H / 5, 100);
+    const int diagY0  = hdrH + 10;
+    const int diagY1  = H - oscH - 6;
     const int diagH   = diagY1 - diagY0;
 
     // Symmetric layout: two big stick wells flanking the diagram, triggers above,
     // shoulders above triggers, dpad bottom-left, face buttons bottom-right,
     // center pills (Back/Guide/Start) between sticks at the top middle.
 
-    const qreal stickR = qMin(qreal(diagH) * 0.30, qreal(W) * 0.18);
+    // Stick radius bounded by BOTH width and remaining vertical space (so dpad
+    // and face buttons fit under the sticks without overflowing the frame).
+    qreal stickR = qreal(diagH) * 0.22;
+    stickR = qMin(stickR, qreal(W)     * 0.16);
+    stickR = qMin(stickR, qreal(diagH) * 0.32 - 28);
+    if (stickR < 24) stickR = 24;
     const qreal stickD = stickR * 2;
 
     // Left/right column anchors
-    const qreal leftCenterX  = W * 0.20;
-    const qreal rightCenterX = W * 0.80;
-    const qreal sticksY      = diagY0 + diagH * 0.35;
+    const qreal leftCenterX  = W * 0.22;
+    const qreal rightCenterX = W * 0.78;
+    const qreal sticksY      = diagY0 + stickR + 32;  // leave room for shoulders above
 
     QRectF leftStick (leftCenterX  - stickR, sticksY - stickR, stickD, stickD);
     QRectF rightStick(rightCenterX - stickR, sticksY - stickR, stickD, stickD);
