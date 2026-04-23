@@ -845,18 +845,24 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return bar
 
-    # ── body (3-column control panel — single screen, no tabs) ───────────────
+    # ── body — scoreboard at top + 2 columns below (single screen, no tabs) ──
     def _build_body(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
         w.setStyleSheet(f"background: {BG};")
-        h = QtWidgets.QHBoxLayout(w)
-        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(0)
+        v = QtWidgets.QVBoxLayout(w)
+        v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
 
-        h.addWidget(self._col_shooting(), 1)
+        v.addWidget(self._build_scoreboard())
+        v.addWidget(_hr())
+
+        body = QtWidgets.QWidget()
+        body.setStyleSheet(f"background: {BG};")
+        h = QtWidgets.QHBoxLayout(body)
+        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(0)
+        h.addWidget(self._col_shooting(),  3)
         h.addWidget(_vsep())
-        h.addWidget(self._col_defense(), 1)
-        h.addWidget(_vsep())
-        h.addWidget(self._col_boosts_stats(), 1)
+        h.addWidget(self._col_defense(),   2)
+        v.addWidget(body, 1)
 
         # locked / unlocked switcher
         self._body_stack = QtWidgets.QStackedWidget()
@@ -864,6 +870,57 @@ class MainWindow(QtWidgets.QMainWindow):
         self._body_stack.addWidget(self._build_locked())
         self._body_stack.addWidget(w)
         return self._body_stack
+
+    # ── scoreboard strip — live stats + reduce lag at the top ─────────────────
+    def _build_scoreboard(self) -> QtWidgets.QWidget:
+        bar = QtWidgets.QWidget()
+        bar.setStyleSheet(f"background: {SURFACE};")
+        bar.setFixedHeight(96)
+        h = QtWidgets.QHBoxLayout(bar)
+        h.setContentsMargins(28, 16, 28, 16); h.setSpacing(28)
+
+        def stat(label: str, value: str):
+            box = QtWidgets.QWidget()
+            v = QtWidgets.QVBoxLayout(box)
+            v.setContentsMargins(0, 0, 0, 0); v.setSpacing(2)
+            l = QtWidgets.QLabel(label.upper())
+            f1 = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
+            f1.setPointSize(8); f1.setWeight(QtGui.QFont.Weight(700))
+            f1.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 2.0)
+            l.setFont(f1); l.setStyleSheet(f"color: {DIM};")
+            v.addWidget(l)
+            n = QtWidgets.QLabel(value)
+            f2 = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Display", "Segoe UI"]))
+            f2.setPointSize(28); f2.setWeight(QtGui.QFont.Weight(800))
+            f2.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, -0.8)
+            n.setFont(f2); n.setStyleSheet(f"color: {TEXT};")
+            v.addWidget(n)
+            return box, n
+
+        sh_box, self._st_rel = stat("Shots Made", "0")
+        st_box, self._st_status = stat("Status", "READY")
+        h.addWidget(sh_box)
+        h.addWidget(st_box)
+        h.addStretch(1)
+        # legacy refs kept None so any stale code paths don't NameError
+        self._st_ses = None
+        self._st_key = None
+
+        # Reduce Lag toggle lives here (connection-y, not a player boost)
+        lat_wrap = QtWidgets.QVBoxLayout(); lat_wrap.setSpacing(2)
+        lat_wrap.addStretch(1)
+        self._tog_lat = StateToggle("Reduce Lag")
+        self._tog_lat.setChecked(bool(self._data.get("low_latency", True)))
+        def _lat(v):
+            self._set("low_latency", v)
+            if _NETOPT_OK: (_net_apply if v else _net_restore)()
+        self._tog_lat.toggled.connect(_lat)
+        if bool(self._data.get("low_latency", True)) and _NETOPT_OK:
+            _net_apply()
+        lat_wrap.addWidget(self._tog_lat)
+        lat_wrap.addStretch(1)
+        h.addLayout(lat_wrap)
+        return bar
 
     # ── locked screen ──────────────────────────────────────────────────────────
     def _build_locked(self) -> QtWidgets.QWidget:
@@ -980,7 +1037,7 @@ class MainWindow(QtWidgets.QMainWindow):
         lay.addStretch(1)
         return scroll
 
-    # ── COL 2 — Defense ───────────────────────────────────────────────────────
+    # ── COL 2 — Defense + Boost (Stamina) ─────────────────────────────────────
     def _col_defense(self) -> QtWidgets.QWidget:
         scroll, lay = self._column_scroll()
         lay.addWidget(ColumnHeader("Defense"))
@@ -993,38 +1050,35 @@ class MainWindow(QtWidgets.QMainWindow):
         _engine.defense_enabled = bool(self._data.get("defense_enabled", False))
         lay.addWidget(master)
 
-        hint = QtWidgets.QLabel("Press D-PAD UP while playing to toggle on / off")
+        hint = QtWidgets.QLabel(
+            "Auto-tracks ballhandlers, contests shots, raises hands. "
+            "Press D-Pad Up while playing to toggle on / off."
+        )
         hint.setFont(ui_font(8)); hint.setStyleSheet(f"color: {DIM};")
-        hint.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        hint.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
+        hint.setWordWrap(True)
         lay.addWidget(hint)
 
+        # All the defense helpers stay on by default — that's what "smart" means.
+        # No UI knobs needed; the engine just runs them.
+        for attr in ("defense_anti_blowby", "defense_auto_hands_up",
+                     "defense_contest_assist", "defense_lateral_boost",
+                     "defense_sensitivity_boost"):
+            setattr(_engine, attr, True)
+
+        lay.addSpacing(8)
         lay.addWidget(_hr())
+        lay.addSpacing(8)
 
-        section = QtWidgets.QLabel("HELPERS")
-        f = QtGui.QFont(_fam(["Inter", "Segoe UI Variable Text", "Segoe UI"]))
-        f.setPointSize(8); f.setWeight(QtGui.QFont.Weight(700))
-        f.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 2.0)
-        section.setFont(f)
-        section.setStyleSheet(f"color: {DIM};")
-        section.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(section)
+        lay.addWidget(ColumnHeader("Boosts"))
+        lay.addSpacing(2)
 
-        sub_map = [
-            ("defense_anti_blowby",       "Stay Tight",            "defense_anti_blowby"),
-            ("defense_auto_hands_up",     "Auto Hands Up",         "defense_auto_hands_up"),
-            ("defense_contest_assist",    "Auto Contest Shots",    "defense_contest_assist"),
-            ("defense_lateral_boost",     "Quicker Side Steps",    "defense_lateral_boost"),
-            ("defense_sensitivity_boost", "Sharper Stick Response","defense_sensitivity_boost"),
-        ]
-        for key, label, attr in sub_map:
-            sub = StateToggle(label)
-            sub.setChecked(bool(self._data.get(key, True)))
-            def _make(k=key, a=attr):
-                def _on(v): self._set(k, v); setattr(_engine, a, v)
-                return _on
-            sub.toggled.connect(_make())
-            setattr(_engine, attr, bool(self._data.get(key, True)))
-            lay.addWidget(sub)
+        stam = StateToggle("Never Run Out of Stamina")
+        stam.setChecked(bool(self._data.get("infinite_stamina", False)))
+        stam.toggled.connect(
+            lambda v: (self._set("infinite_stamina", v), setattr(_engine, "infinite_stamina", v)))
+        _engine.infinite_stamina = bool(self._data.get("infinite_stamina", False))
+        lay.addWidget(stam)
 
         lay.addStretch(1)
         return scroll
@@ -1245,13 +1299,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ── stats tick ────────────────────────────────────────────────────────────
     def _tick(self):
-        """Refresh live stats — Releases + License/Time Left. The engine runs
-        continuously while this UI is alive; LabsEngine controls lifecycle."""
+        """Refresh scoreboard — Shots Made + Engine Status."""
         if not hasattr(self, "_st_rel"): return
-        if _engine.is_running():
-            self._st_rel.setValue(str(_engine.shots))
-        if hasattr(self, "_st_ses"):
-            self._st_ses.setValue(self._time_left_val())
+        running = _engine.is_running() if ENGINE_OK else False
+        self._st_rel.setText(str(_engine.shots if running else 0))
+        if hasattr(self, "_st_status") and self._st_status:
+            self._st_status.setText("RUNNING" if running else "READY")
+            self._st_status.setStyleSheet(f"color: {OK if running else TEXT};")
 
     # ── auth ──────────────────────────────────────────────────────────────────
     def _apply_lock(self):
@@ -1279,18 +1333,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 }}
                 QLineEdit:focus {{ border-color: {ACCENT}; }}
             """)
-        if hasattr(self, "_st_key"):
-            self._st_key.setValue(dur or "—")
-        if hasattr(self, "_st_ses"):
-            val = self._time_left_val()
-            self._st_ses.setValue(val)
-            is_life = val == "LIFETIME"
-            self._st_ses._val.setFont(label_font(10) if is_life else mono_font(18, 700))
-            self._st_ses._val.setStyleSheet(
-                f"background: transparent; border: none; color: {ACCENT}; letter-spacing: 2px;"
-                if is_life else
-                f"background: transparent; border: none; color: {TEXT};"
-            )
+        # _st_ses / _st_key are deprecated — license info now lives in the
+        # top-bar chip only. Keep this method idempotent.
 
     # ── settings ──────────────────────────────────────────────────────────────
     def _time_left_val(self) -> str:
