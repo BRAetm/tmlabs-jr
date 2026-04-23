@@ -14,6 +14,7 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -26,12 +27,14 @@
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
+#include <QStandardPaths>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QStatusBar>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -134,6 +137,54 @@ static QFrame* hSeparator(QWidget* parent)
     return s;
 }
 
+// Canonical user scripts folder. Auto-scanned on startup, also where downloaded
+// scripts land. User can drop their own .py files in here and they show up.
+static QString userScriptsDir()
+{
+    const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString dir = QDir::cleanPath(appData + QStringLiteral("/scripts"));
+    QDir().mkpath(dir);
+    return dir;
+}
+
+// On first launch, copy any bundled .py scripts into the user folder so the app
+// has SOMETHING to run with. Won't overwrite if the user has already edited the
+// script in their folder.
+static void seedDefaultScripts()
+{
+    const QString userDir = userScriptsDir();
+    // Look in install-dir-relative locations; first hit wins.
+    QStringList sourceDirs = {
+        QCoreApplication::applicationDirPath() + QStringLiteral("/scripts"),       // installed: <install>/scripts/
+        QDir::cleanPath(QCoreApplication::applicationDirPath()
+                        + QStringLiteral("/../../../../labs-engine/scripts")),     // dev tree
+    };
+    for (const QString& src : sourceDirs) {
+        if (!QDir(src).exists()) continue;
+        for (const QFileInfo& fi : QDir(src).entryInfoList(
+                 QStringList{QStringLiteral("*.py")}, QDir::Files)) {
+            if (fi.fileName().startsWith(QChar('_'))) continue;
+            const QString dst = userDir + QChar('/') + fi.fileName();
+            if (!QFile::exists(dst)) {
+                QFile::copy(fi.absoluteFilePath(), dst);
+            }
+        }
+        // Also copy cv-scripts/ helper modules into user dir (sibling), so the
+        // script's `sys.path.insert(0, ROOT.parent / "cv-scripts")` resolves.
+        const QString cvSrc = QDir::cleanPath(src + QStringLiteral("/../cv-scripts"));
+        const QString cvDst = QDir::cleanPath(userDir + QStringLiteral("/../cv-scripts"));
+        if (QDir(cvSrc).exists()) {
+            QDir().mkpath(cvDst);
+            for (const QFileInfo& fi : QDir(cvSrc).entryInfoList(
+                     QStringList{QStringLiteral("*.py")}, QDir::Files)) {
+                const QString dst = cvDst + QChar('/') + fi.fileName();
+                if (!QFile::exists(dst)) QFile::copy(fi.absoluteFilePath(), dst);
+            }
+        }
+        break;  // first matching source dir wins
+    }
+}
+
 // ── ctor ────────────────────────────────────────────────────────────────────
 
 LabsMainWindow::LabsMainWindow(QWidget* parent)
@@ -141,7 +192,7 @@ LabsMainWindow::LabsMainWindow(QWidget* parent)
     , m_settings(std::make_unique<SettingsManager>())
     , m_pluginHost(std::make_unique<PluginHost>(this))
 {
-    setWindowTitle(QStringLiteral("Labs Engine — PS Remote Play"));
+    setWindowTitle(QStringLiteral("Labs Engine"));
     importLabsSharpPairing(m_settings.get());
     const QByteArray geom  = m_settings->value(QStringLiteral("window/geometry")).toByteArray();
     const QByteArray state = m_settings->value(QStringLiteral("window/state")).toByteArray();
@@ -279,7 +330,7 @@ void LabsMainWindow::closeEvent(QCloseEvent* event)
         m_settings->setValue(QStringLiteral("window/state"),    saveState());
         m_settings->setValue(QStringLiteral("session/mode"),    m_modeBox->currentIndex());
         if (m_scriptCombo) {
-            m_settings->setValue(QStringLiteral("cv/scriptPath"), m_scriptCombo->currentText());
+            m_settings->setValue(QStringLiteral("cv/scriptPath"), m_scriptCombo->currentData().toString());
         }
         m_settings->sync();
     }
@@ -294,9 +345,11 @@ QWidget* LabsMainWindow::buildTopBar()
     bar->setObjectName(QStringLiteral("topBar"));
     bar->setFixedHeight(56);
 
+    bar->setFixedHeight(64);
+
     auto* logo = new LabsLogoWidget(bar);
 
-    auto* wordmark = new QLabel(QStringLiteral("labs engine"), bar);
+    auto* wordmark = new QLabel(QStringLiteral("Labs Engine"), bar);
     wordmark->setObjectName(QStringLiteral("wordmark"));
 
     auto* version = new QLabel(QStringLiteral("v1.0 · creator studio"), bar);
@@ -307,6 +360,12 @@ QWidget* LabsMainWindow::buildTopBar()
     titleColumn->setSpacing(2);
     titleColumn->addWidget(wordmark);
     titleColumn->addWidget(version);
+
+    // Engine state pill — middle of the bar, eye-catching, single source of truth.
+    m_statePill = new QLabel(QStringLiteral("READY"), bar);
+    m_statePill->setObjectName(QStringLiteral("statePill"));
+    m_statePill->setProperty("state", "ready");
+    m_statePill->setAlignment(Qt::AlignCenter);
 
     auto* modeLabel = new QLabel(QStringLiteral("mode"), bar);
     modeLabel->setObjectName(QStringLiteral("modeLabel"));
@@ -319,9 +378,14 @@ QWidget* LabsMainWindow::buildTopBar()
     m_btnPick  = new QPushButton(QStringLiteral("pick window"), bar);
     m_btnPair  = new QPushButton(QStringLiteral("pair…"),       bar);
     auto* btnTheme = new QPushButton(QStringLiteral("theme…"),  bar);
-    m_btnStart = new QPushButton(QStringLiteral("start"),       bar);
-    m_btnStop  = new QPushButton(QStringLiteral("stop"),        bar);
+    m_btnStart = new QPushButton(QStringLiteral("START ENGINE"), bar);
+    m_btnStop  = new QPushButton(QStringLiteral("STOP"),         bar);
+    m_btnPick->setProperty("ghost",  true);
+    m_btnPair->setProperty("ghost",  true);
+    btnTheme ->setProperty("ghost",  true);
     m_btnStart->setProperty("accent", true);
+    m_btnStop ->setProperty("danger", true);
+    m_btnStop->setVisible(false);  // only show when running
 
     connect(m_btnPick,  &QPushButton::clicked, this, &LabsMainWindow::onPickWindow);
     connect(m_btnPair,  &QPushButton::clicked, this, &LabsMainWindow::onPair);
@@ -331,16 +395,19 @@ QWidget* LabsMainWindow::buildTopBar()
 
     auto* row = new QHBoxLayout(bar);
     row->setContentsMargins(20, 0, 18, 0);
-    row->setSpacing(12);
+    row->setSpacing(10);
     row->addWidget(logo);
-    row->addSpacing(6);
+    row->addSpacing(8);
     row->addLayout(titleColumn);
+    row->addSpacing(18);
+    row->addWidget(m_statePill);
     row->addStretch();
     row->addWidget(modeLabel);
     row->addWidget(m_modeBox);
     row->addWidget(m_btnPick);
     row->addWidget(m_btnPair);
     row->addWidget(btnTheme);
+    row->addSpacing(6);
     row->addWidget(m_btnStart);
     row->addWidget(m_btnStop);
 
@@ -367,43 +434,77 @@ QWidget* LabsMainWindow::buildScriptsRail()
     col->addSpacing(4);
 
     m_scriptCombo = new QComboBox(rail);
-    m_scriptCombo->setEditable(true);
-    m_scriptCombo->setInsertPolicy(QComboBox::NoInsert);
+    m_scriptCombo->setEditable(false);
+    m_scriptCombo->setMinimumHeight(30);
     {
+        // Seed the user folder with bundled scripts on first run, then auto-scan.
+        // Users can drop their own .py here. Future "download" feature lands here too.
+        seedDefaultScripts();
+        const QString scriptsDir = userScriptsDir();
+        QStringList found;
+        for (const QFileInfo& fi : QDir(scriptsDir).entryInfoList(
+                 QStringList{QStringLiteral("*.py")}, QDir::Files, QDir::Name)) {
+            if (fi.fileName().startsWith(QChar('_'))) continue;            // skip __init__ etc
+            if (fi.completeBaseName().endsWith(QStringLiteral("_test"))) continue;
+            found << fi.absoluteFilePath();
+        }
+
+        // Saved path (may be a custom one outside the user dir — keep it).
         QString saved = m_settings ? m_settings->value(QStringLiteral("cv/scriptPath")).toString() : QString();
-        if (saved.isEmpty() || !QFileInfo::exists(saved)) {
-            const QString candidate = QDir::cleanPath(
-                QCoreApplication::applicationDirPath()
-                + QStringLiteral("/../../../../labs-engine/scripts/SecretK.py"));
-            saved = QFileInfo::exists(candidate) ? candidate : QString();
+        if (!saved.isEmpty() && QFileInfo::exists(saved) && !found.contains(saved)) {
+            found.prepend(saved);
         }
-        if (!saved.isEmpty()) {
-            m_scriptCombo->addItem(saved);
-            m_scriptCombo->setCurrentText(saved);
+
+        for (const QString& path : found) {
+            m_scriptCombo->addItem(QFileInfo(path).completeBaseName(), path);
         }
+
+        int idx = -1;
+        if (!saved.isEmpty()) idx = m_scriptCombo->findData(saved);
+        if (idx < 0 && m_scriptCombo->count() > 0) idx = 0;
+        if (idx >= 0) m_scriptCombo->setCurrentIndex(idx);
     }
-    connect(m_scriptCombo, &QComboBox::currentTextChanged, this, [this](const QString&) { updateActions(); });
+    connect(m_scriptCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { updateActions(); });
     col->addWidget(m_scriptCombo);
 
-    col->addSpacing(10);
-    m_scriptBrowseBtn = new QPushButton(QStringLiteral("browse…"), rail);
-    connect(m_scriptBrowseBtn, &QPushButton::clicked, this, &LabsMainWindow::onBrowseScript);
-    col->addWidget(m_scriptBrowseBtn);
-
     col->addSpacing(8);
-    auto* scriptBtnRow = new QHBoxLayout();
-    scriptBtnRow->setSpacing(8);
-    m_scriptRunBtn  = new QPushButton(QStringLiteral("run"), rail);
-    m_scriptStopBtn = new QPushButton(QStringLiteral("stop"), rail);
+    auto* scriptToolRow = new QHBoxLayout();
+    scriptToolRow->setSpacing(6);
+    m_scriptBrowseBtn = new QPushButton(QStringLiteral("browse…"), rail);
+    m_scriptBrowseBtn->setProperty("ghost", true);
+    auto* openFolderBtn = new QPushButton(QStringLiteral("open folder"), rail);
+    openFolderBtn->setProperty("ghost", true);
+    connect(m_scriptBrowseBtn, &QPushButton::clicked, this, &LabsMainWindow::onBrowseScript);
+    connect(openFolderBtn, &QPushButton::clicked, this, []() {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(userScriptsDir()));
+    });
+    scriptToolRow->addWidget(m_scriptBrowseBtn);
+    scriptToolRow->addWidget(openFolderBtn);
+    col->addLayout(scriptToolRow);
+
+    col->addSpacing(6);
+    auto* hint = new QLabel(
+        QStringLiteral("Drop .py files in the scripts folder to add them. They'll show up in the picker on next launch."),
+        rail);
+    hint->setObjectName(QStringLiteral("eyebrow"));
+    hint->setWordWrap(true);
+    hint->setStyleSheet(QStringLiteral("padding: 0; letter-spacing: 0.2px; font-weight: 400;"));
+    col->addWidget(hint);
+
+    col->addSpacing(14);
+    m_scriptRunBtn  = new QPushButton(QStringLiteral("RUN SCRIPT"), rail);
+    m_scriptStopBtn = new QPushButton(QStringLiteral("STOP"), rail);
     m_scriptStopBtn->setEnabled(false);
     m_scriptRunBtn ->setProperty("accent", true);
+    m_scriptStopBtn->setProperty("danger", true);
+    m_scriptStopBtn->setVisible(false);
     connect(m_scriptRunBtn,  &QPushButton::clicked, this, &LabsMainWindow::onRunScript);
     connect(m_scriptStopBtn, &QPushButton::clicked, this, &LabsMainWindow::onStopScript);
-    scriptBtnRow->addWidget(m_scriptRunBtn);
-    scriptBtnRow->addWidget(m_scriptStopBtn);
-    col->addLayout(scriptBtnRow);
+    col->addWidget(m_scriptRunBtn);
+    col->addWidget(m_scriptStopBtn);
 
-    col->addSpacing(16);
+    col->addSpacing(20);
     col->addWidget(eyebrowLabel(QStringLiteral("status"), rail));
     col->addSpacing(4);
     m_scriptStatus = new QLabel(QStringLiteral("idle"), rail);
@@ -614,7 +715,7 @@ void LabsMainWindow::onPair()
 void LabsMainWindow::onStart()
 {
     if (m_settings && m_scriptCombo) {
-        m_settings->setValue(QStringLiteral("cv/scriptPath"), m_scriptCombo->currentText());
+        m_settings->setValue(QStringLiteral("cv/scriptPath"), m_scriptCombo->currentData().toString());
     }
     if (!m_activeSource) { appendLog(QStringLiteral("no source for this mode")); return; }
     if (m_activeSource->start()) {
@@ -653,15 +754,18 @@ void LabsMainWindow::onFpsTick()
 
 void LabsMainWindow::onBrowseScript()
 {
-    const QString start = m_scriptCombo ? m_scriptCombo->currentText() : QString();
+    const QString start = m_scriptCombo ? m_scriptCombo->currentData().toString() : QString();
     const QString picked = QFileDialog::getOpenFileName(this,
         QStringLiteral("Pick CV script"),
         start.isEmpty() ? QDir::homePath() : QFileInfo(start).absolutePath(),
         QStringLiteral("Python (*.py);;All files (*.*)"));
     if (picked.isEmpty()) return;
     if (m_scriptCombo) {
-        int idx = m_scriptCombo->findText(picked);
-        if (idx < 0) { m_scriptCombo->addItem(picked); idx = m_scriptCombo->count() - 1; }
+        int idx = m_scriptCombo->findData(picked);
+        if (idx < 0) {
+            m_scriptCombo->addItem(QFileInfo(picked).completeBaseName(), picked);
+            idx = m_scriptCombo->count() - 1;
+        }
         m_scriptCombo->setCurrentIndex(idx);
     }
     if (m_settings) m_settings->setValue(QStringLiteral("cv/scriptPath"), picked);
@@ -670,7 +774,7 @@ void LabsMainWindow::onBrowseScript()
 
 void LabsMainWindow::onRunScript()
 {
-    const QString path = m_scriptCombo ? m_scriptCombo->currentText().trimmed() : QString();
+    const QString path = m_scriptCombo ? m_scriptCombo->currentData().toString().trimmed() : QString();
     if (path.isEmpty()) {
         appendLog(QStringLiteral("select a script first"));
         return;
@@ -743,12 +847,32 @@ void LabsMainWindow::updateActions()
 
     if (m_btnPick)      m_btnPick ->setEnabled(haveSource && !running && mode == Mode::Xbox);
     if (m_btnPair)      m_btnPair ->setEnabled(!running && mode == Mode::PS);
-    if (m_btnStart)     m_btnStart->setEnabled(haveSource && !running);
-    if (m_btnStop)      m_btnStop ->setEnabled(haveSource &&  running);
+    if (m_btnStart) {
+        m_btnStart->setEnabled(haveSource && !running);
+        m_btnStart->setVisible(!running);
+    }
+    if (m_btnStop) {
+        m_btnStop ->setEnabled(haveSource &&  running);
+        m_btnStop ->setVisible(running);
+    }
     if (m_modeBox)      m_modeBox ->setEnabled(!running);
-    const bool haveScript = m_scriptCombo && !m_scriptCombo->currentText().trimmed().isEmpty();
+    const bool haveScript = m_scriptCombo && !m_scriptCombo->currentData().toString().trimmed().isEmpty();
     if (m_scriptRunBtn)  m_scriptRunBtn ->setEnabled(haveSource && haveScript && !scriptRunning);
     if (m_scriptStopBtn) m_scriptStopBtn->setEnabled(scriptRunning);
+
+    // State pill — single source of truth for "is the engine doing anything".
+    if (m_statePill) {
+        const char* state;
+        QString text;
+        if (running && scriptRunning) { state = "running"; text = "RUNNING"; }
+        else if (running)             { state = "running"; text = "STREAMING"; }
+        else if (scriptRunning)       { state = "running"; text = "SCRIPT"; }
+        else                          { state = "ready";   text = "READY"; }
+        m_statePill->setText(text);
+        m_statePill->setProperty("state", state);
+        m_statePill->style()->unpolish(m_statePill);
+        m_statePill->style()->polish(m_statePill);
+    }
 }
 
 void LabsMainWindow::appendLog(const QString& text)

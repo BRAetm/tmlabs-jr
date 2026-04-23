@@ -111,15 +111,41 @@ QToolBar::separator { background: %BORDER%; width: 1px; margin: 4px 6px; }
 QToolButton, QPushButton {
     background: %SURFACE%; color: %TEXT%;
     border: 1px solid %BORDER%; border-radius: 6px;
-    padding: 6px 14px; min-height: 22px; font-weight: 600;
+    padding: 6px 14px; min-height: 22px; font-weight: 500;
 }
 QToolButton:hover, QPushButton:hover { background: %SURFACEH%; border-color: %BORDERBR%; }
 QToolButton:pressed, QPushButton:pressed { background: %BGSUB%; }
 QToolButton:disabled, QPushButton:disabled { color: %TEXTDIM%; background: %BGSUB%; border-color: %SURFACE%; }
 QToolButton:checked { background: %ACCENTH%; border-color: %ACCENT%; color: %TEXT%; }
 
-QPushButton[accent="true"] { background: %ACCENTH%; border-color: %ACCENT%; color: %TEXT%; }
-QPushButton[accent="true"]:hover { background: %ACCENT%; }
+/* Hero accent — the one button that owns the screen (Start Engine) */
+QPushButton[accent="true"] {
+    background: %ACCENT%; color: white;
+    border: none; border-radius: 8px;
+    padding: 0 28px; min-height: 38px; font-weight: 700;
+    font-size: 13px; letter-spacing: 0.6px;
+}
+QPushButton[accent="true"]:hover    { background: %ACCENTLT%; }
+QPushButton[accent="true"]:pressed  { background: %ACCENTH%; }
+QPushButton[accent="true"]:disabled { background: %BGSUB%; color: %TEXTDIM%; }
+
+/* Danger — for stop button when something is running */
+QPushButton[danger="true"] {
+    background: #B91C1C; color: white;
+    border: none; border-radius: 8px;
+    padding: 0 28px; min-height: 38px; font-weight: 700;
+    font-size: 13px; letter-spacing: 0.6px;
+}
+QPushButton[danger="true"]:hover   { background: #DC2626; }
+QPushButton[danger="true"]:pressed { background: #991B1B; }
+
+/* Ghost — secondary actions (browse, theme, settings) */
+QPushButton[ghost="true"] {
+    background: transparent; color: %TEXTMUTED%;
+    border: 1px solid %BORDER%; border-radius: 6px;
+    padding: 6px 14px; min-height: 26px; font-weight: 500;
+}
+QPushButton[ghost="true"]:hover { color: %TEXT%; border-color: %BORDERBR%; }
 
 QComboBox {
     background: %SURFACE%; color: %TEXT%;
@@ -182,21 +208,70 @@ QWidget#stageTabs {
 QLabel#wordmark {
     color: %TEXT%;
     font-family: "Segoe UI Variable Display","Segoe UI";
-    font-size: 17px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
     background: transparent;
 }
 QLabel#versionTag {
-    color: %ACCENTLT%;
-    font-family: "Cascadia Mono","Consolas";
-    font-size: 10px;
+    color: %TEXTDIM%;
+    font-family: "Segoe UI Variable Text","Segoe UI";
+    font-size: 11px;
+    font-weight: 500;
     background: transparent;
 }
 QLabel#eyebrow {
     color: %TEXTDIM%;
-    font-family: "Cascadia Mono","Consolas";
+    font-family: "Segoe UI Variable Text","Segoe UI";
     font-size: 10px;
-    letter-spacing: 1.5px;
+    font-weight: 600;
+    letter-spacing: 1.0px;
+    background: transparent;
+}
+
+/* Engine state pill — the big visible RUNNING / READY indicator */
+QLabel#statePill {
+    background: %BGSUB%;
+    border: 1px solid %BORDER%;
+    border-radius: 14px;
+    padding: 4px 14px;
+    font-family: "Segoe UI Variable Text","Segoe UI";
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: %TEXTDIM%;
+}
+QLabel#statePill[state="running"] {
+    background: rgba(34,197,94,0.12);
+    border-color: rgba(34,197,94,0.45);
+    color: #4ADE80;
+}
+QLabel#statePill[state="ready"] {
+    background: %BGSUB%;
+    border-color: %BORDER%;
+    color: %TEXTMUTED%;
+}
+QLabel#statePill[state="error"] {
+    background: rgba(239,68,68,0.12);
+    border-color: rgba(239,68,68,0.45);
+    color: #FCA5A5;
+}
+
+/* Big stat numbers (FPS, shots fired) */
+QLabel#bigStat {
+    color: %TEXT%;
+    font-family: "Segoe UI Variable Display","Segoe UI";
+    font-size: 28px;
+    font-weight: 700;
+    background: transparent;
+    letter-spacing: -0.5px;
+}
+QLabel#bigStatLabel {
+    color: %TEXTDIM%;
+    font-family: "Segoe UI Variable Text","Segoe UI";
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.0px;
     background: transparent;
 }
 QLabel#sectionTitle {

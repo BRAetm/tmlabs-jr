@@ -100,25 +100,43 @@ def xinput_status() -> dict:
 
 
 # ── Window finder ─────────────────────────────────────────────────────────────
-def find_window(keywords=("Xbox", "Remote Play", "Chiaki", "PS Remote")):
+# Prefer "Labs Engine" — that's the host app's stream window. Fall back to
+# generic Remote Play apps if Labs Engine isn't running.
+_PREFERRED_KEYWORDS = ("Labs Engine",)
+_FALLBACK_KEYWORDS  = ("Xbox", "Remote Play", "Chiaki", "PS Remote")
+
+def find_window(keywords=None):
     try:
         import win32gui
-        found = []
-        def _cb(hwnd, _):
-            t = win32gui.GetWindowText(hwnd)
-            if any(k in t for k in keywords) and win32gui.IsWindowVisible(hwnd):
-                r = win32gui.GetWindowRect(hwnd)
-                found.append((t, r))
-        win32gui.EnumWindows(_cb, None)
-        if found:
-            title, (x1, y1, x2, y2) = found[0]
-            print(f"[CAPTURE] Window: '{title}'  {x2-x1}x{y2-y1}")
-            return {"left": x1, "top": y1, "width": x2-x1, "height": y2-y1}
-    except Exception:
-        pass
+        # build the search list: preferred first, then fallback. de-dup, keep order.
+        search = list(_PREFERRED_KEYWORDS)
+        if keywords:
+            for k in keywords:
+                if k not in search: search.append(k)
+        else:
+            for k in _FALLBACK_KEYWORDS:
+                if k not in search: search.append(k)
+
+        # try each keyword in priority order, return the first hit per keyword
+        for kw in search:
+            hits = []
+            def _cb(hwnd, _kw=kw):
+                t = win32gui.GetWindowText(hwnd)
+                if _kw in t and win32gui.IsWindowVisible(hwnd):
+                    r = win32gui.GetWindowRect(hwnd)
+                    if (r[2] - r[0]) > 200 and (r[3] - r[1]) > 200:
+                        hits.append((t, r))
+            win32gui.EnumWindows(_cb, None)
+            if hits:
+                title, (x1, y1, x2, y2) = hits[0]
+                print(f"[CAPTURE] Window: '{title}'  {x2-x1}x{y2-y1}  (kw='{kw}')")
+                return {"left": x1, "top": y1, "width": x2-x1, "height": y2-y1}
+    except Exception as ex:
+        print(f"[CAPTURE] win32gui error: {ex}")
+
     with mss.mss() as sct:
         m = sct.monitors[1]
-        print("[CAPTURE] No window found -- full primary monitor")
+        print("[CAPTURE] No window found — falling back to full primary monitor")
         return {"left": m["left"], "top": m["top"], "width": m["width"], "height": m["height"]}
 
 

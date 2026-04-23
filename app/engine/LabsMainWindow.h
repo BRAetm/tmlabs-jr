@@ -87,6 +87,7 @@ private:
     QPushButton* m_btnPair    = nullptr;
     QPushButton* m_btnStart   = nullptr;
     QPushButton* m_btnStop    = nullptr;
+    QLabel*      m_statePill  = nullptr;
 
     // Left rail.
     QComboBox*   m_scriptCombo     = nullptr;
