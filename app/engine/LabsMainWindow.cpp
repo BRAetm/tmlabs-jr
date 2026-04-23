@@ -829,21 +829,31 @@ void LabsMainWindow::onStart()
         // Default tier-based settings (assume worst-case internet path)
         int  fps     = low ? 30   : 60;
         int  bitrate = low ? 5000 : 15000;
+        int  width   = 1280;       // 720p — safe over the internet
+        int  height  = 720;
         int  codec   = 0;          // H.264 — fastest decode, lowest latency
 
         // LAN override — when the PS5 is on the local network, lift the caps:
-        // bandwidth is free, latency is the only target, so push fps + bitrate.
-        // Both Low End and High End run at 60fps on LAN; only bitrate scales.
+        // bandwidth is free, latency is the only target. High End jumps to 1080p
+        // since the bitrate can support it; Low End stays at 720p so weak GPUs
+        // don't choke on the bigger frames.
         const QString host = m_settings->value(QStringLiteral("ps/host")).toString();
         const bool onLan = isLanIp(host);
         if (onLan) {
             fps     = 60;
-            bitrate = low ? 12000 : 25000;
-            appendLog(QStringLiteral("LAN detected (%1) — using low-latency profile").arg(host));
+            if (low) {
+                bitrate = 12000;            // 720p sharp
+            } else {
+                width   = 1920; height = 1080;
+                bitrate = 25000;            // 1080p sharp
+            }
+            appendLog(QStringLiteral("LAN — %1×%2 @ %3fps · %4 Mbps").arg(width).arg(height).arg(fps).arg(bitrate / 1000));
         }
 
         m_settings->setValue(QStringLiteral("ps/fps"),     fps);
         m_settings->setValue(QStringLiteral("ps/bitrate"), bitrate);
+        m_settings->setValue(QStringLiteral("ps/width"),   width);
+        m_settings->setValue(QStringLiteral("ps/height"),  height);
         m_settings->setValue(QStringLiteral("ps/codec"),   codec);
         m_settings->sync();
     }
