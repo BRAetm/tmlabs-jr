@@ -1034,9 +1034,9 @@ void LabsMainWindow::updateActions()
                 const QString picked = m_scriptCombo->currentData().toString();
                 const QString name = picked.isEmpty()
                     ? QStringLiteral("script") : QFileInfo(picked).fileName();
-                text = QStringLiteral("▶  %1").arg(name);
+                text = QStringLiteral("running script: %1").arg(name);
             } else {
-                text = QStringLiteral("▶  STREAMING");
+                text = QStringLiteral("streaming");
             }
             m_statePill->setText(text);
             m_statePill->setProperty("state", "running");

@@ -243,33 +243,19 @@ QLabel#eyebrow {
     background: transparent;
 }
 
-/* Engine state pill — the big visible RUNNING / READY indicator */
+/* Engine state — plain text only, no chip. Hidden at idle, visible when running. */
 QLabel#statePill {
-    background: %BGSUB%;
-    border: 1px solid %BORDER%;
-    border-radius: 14px;
-    padding: 4px 14px;
+    background: transparent;
+    border: none;
+    padding: 0 8px;
     font-family: "Segoe UI Variable Text","Segoe UI";
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1.2px;
-    color: %TEXTDIM%;
-}
-QLabel#statePill[state="running"] {
-    background: rgba(34,197,94,0.12);
-    border-color: rgba(34,197,94,0.45);
-    color: #4ADE80;
-}
-QLabel#statePill[state="ready"] {
-    background: %BGSUB%;
-    border-color: %BORDER%;
+    font-size: 12px;
+    font-weight: 500;
     color: %TEXTMUTED%;
+    letter-spacing: 0;
 }
-QLabel#statePill[state="error"] {
-    background: rgba(239,68,68,0.12);
-    border-color: rgba(239,68,68,0.45);
-    color: #FCA5A5;
-}
+QLabel#statePill[state="running"] { color: #4ADE80; }
+QLabel#statePill[state="error"]   { color: #FCA5A5; }
 
 /* Big stat numbers (FPS, shots fired) */
 QLabel#bigStat {
