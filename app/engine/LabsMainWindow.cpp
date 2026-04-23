@@ -138,6 +138,24 @@ static QFrame* hSeparator(QWidget* parent)
     return s;
 }
 
+// True if the IP is in a private/LAN range — no point throttling for "internet" caps
+// when traffic stays inside the home network.
+//   192.168.0.0/16   10.0.0.0/8   172.16.0.0/12   169.254.0.0/16 (link-local)
+static bool isLanIp(const QString& ip)
+{
+    if (ip.startsWith(QStringLiteral("192.168."))) return true;
+    if (ip.startsWith(QStringLiteral("10.")))      return true;
+    if (ip.startsWith(QStringLiteral("169.254.")))  return true;
+    if (ip.startsWith(QStringLiteral("172."))) {
+        const auto parts = ip.split(QChar('.'));
+        if (parts.size() >= 2) {
+            const int oct2 = parts[1].toInt();
+            if (oct2 >= 16 && oct2 <= 31) return true;
+        }
+    }
+    return false;
+}
+
 // Canonical user scripts folder. Auto-scanned on startup, also where downloaded
 // scripts land. User can drop their own .py files in here and they show up.
 static QString userScriptsDir()
@@ -198,7 +216,7 @@ LabsMainWindow::LabsMainWindow(QWidget* parent)
     const QByteArray geom  = m_settings->value(QStringLiteral("window/geometry")).toByteArray();
     const QByteArray state = m_settings->value(QStringLiteral("window/state")).toByteArray();
     if (!geom.isEmpty())  restoreGeometry(geom);
-    else                  resize(1320, 720);
+    else                  resize(1560, 900);
     if (!state.isEmpty()) restoreState(state);
 
     m_fpsTimer = new QTimer(this);
@@ -807,9 +825,26 @@ void LabsMainWindow::onStart()
     // separately via --target-fps when the script launches.
     if (m_settings && m_perfLiteBtn) {
         const bool low = m_perfLiteBtn->isChecked();
-        m_settings->setValue(QStringLiteral("ps/fps"),     low ? 30 : 60);
-        m_settings->setValue(QStringLiteral("ps/bitrate"), low ? 5000 : 15000);
-        m_settings->setValue(QStringLiteral("ps/codec"),   0);  // H.264
+
+        // Default tier-based settings (assume worst-case internet path)
+        int  fps     = low ? 30   : 60;
+        int  bitrate = low ? 5000 : 15000;
+        int  codec   = 0;          // H.264 — fastest decode, lowest latency
+
+        // LAN override — when the PS5 is on the local network, lift the caps:
+        // bandwidth is free, latency is the only target, so push fps + bitrate.
+        // Both Low End and High End run at 60fps on LAN; only bitrate scales.
+        const QString host = m_settings->value(QStringLiteral("ps/host")).toString();
+        const bool onLan = isLanIp(host);
+        if (onLan) {
+            fps     = 60;
+            bitrate = low ? 12000 : 25000;
+            appendLog(QStringLiteral("LAN detected (%1) — using low-latency profile").arg(host));
+        }
+
+        m_settings->setValue(QStringLiteral("ps/fps"),     fps);
+        m_settings->setValue(QStringLiteral("ps/bitrate"), bitrate);
+        m_settings->setValue(QStringLiteral("ps/codec"),   codec);
         m_settings->sync();
     }
 
